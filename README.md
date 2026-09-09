@@ -154,24 +154,32 @@ to open a radio that is fussy about its parameter set:
 ./build/app/adsb_print --device "driver=sdrplay"       --rate 6e6
 ```
 
-Then add gain and bandwidth once it streams:
+Then add bandwidth, and on devices with a real gain control the gain, once it streams:
 
 ```
 ./build/app/adsb_print --device "driver=hackrf"  --rate 4e6 --bandwidth 5e6 --gain 40
-./build/app/adsb_print --device "driver=sdrplay" --rate 6e6 --bandwidth 6e6 --agc on
+./build/app/adsb_print --device "driver=sdrplay" --rate 6e6 --bandwidth 6e6
 ```
 
 **`--gain`, `--bandwidth` and `--agc` are asked for only when you give them.** Left off, the device
-keeps its own gain, its own bandwidth for the rate, and its own gain mode. This is not cosmetic: the
-block pushes every setting it holds when it opens the device, and its own defaults are 10 dB and
-500 kHz, so a parameter set nobody asked for used to reach the radio. An SDRplay refuses the whole
-activation on a combination it cannot serve — `Init() failed: sdrplay_api_Fail` — while the same
-device streams under `SoapySDRUtil --args="driver=sdrplay" --rate=6e6 --direction=RX`, which sets
-the rate and nothing else. The application prints, at start, exactly what it asked the device for
-and what it left alone, so a failed run says which it was.
+keeps its own gain, its own bandwidth for the rate, and its own gain mode. The block pushes every
+setting it holds when it opens the device, and its own defaults are 10 dB and 500 kHz, so without
+this a parameter set nobody asked for would reach the radio. The application prints, at start,
+exactly what it asked the device for and what it left alone, so a failed run says which it was.
+
+**Leave `--gain` off on an SDRplay.** `--gain` is SoapySDR's overall gain, and the SDRplay driver
+(SoapySDRPlay3) has no such thing: it exposes two gain-reduction elements, `IFGR` (20 to 59 dB,
+ignored while the driver's AGC is on, which it is by default) and `RFGR`, the LNA state (0 to 9).
+SoapySDR spreads an overall gain across those elements, and `--gain 40` lands LNA state 9; above
+1 GHz the RSP1A has states 0 to 8 only, so the device refuses the whole activation with
+`Init() failed: sdrplay_api_Fail`. The block's old 10 dB default failed the same way. Rate,
+frequency and bandwidth alone stream cleanly at 6 MS/s. This was pinned with a standalone SoapySDR
+probe that replays the block's call order one setter at a time: the sequence fails only once the
+gain step is added, with the driver reporting `RFGR=9` just before the failing activation.
 
 `--agc off` is the default and asks for nothing; the block only ever turns AGC *on*, so there is no
-way from here to force it off on a device that enables it by itself.
+way from here to force it off on a device that enables it by itself. An SDRplay runs its AGC by
+default, which suits ADS-B.
 
 `--device` takes the SoapySDR device string you would give any other Soapy program. The application
 splits it into the two settings the block wants — the `driver=` key becomes `device` and the rest
