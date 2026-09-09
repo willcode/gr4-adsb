@@ -117,14 +117,14 @@ and counted, oldest first.
     PpmConfig  _framing{};
     PpmScanner _scanner{};
     /// @brief What the kernel counted under the geometries it has already been reconfigured out of, which zero its own counters.
-    PpmCounters _retired{};
-    std::vector<float>       _work{};          ///< samples not yet decided, followed by whatever arrived last
-    std::size_t              _workStart = 0UZ; ///< absolute input index of `_work`'s first sample
-    std::size_t              _slot      = 0UZ; ///< samples per half-bit-period slot, at the rate in force
-    float                    _rate      = 0.F; ///< the rate in force, which a tag may replace
-    std::vector<Pending>     _pending{};
-    std::vector<Arriving>    _arriving{};
-    std::uint64_t            _sequence = 0ULL;
+    PpmCounters           _retired{};
+    std::vector<float>    _work{};          ///< samples not yet decided, followed by whatever arrived last
+    std::size_t           _workStart = 0UZ; ///< absolute input index of `_work`'s first sample
+    std::size_t           _slot      = 0UZ; ///< samples per half-bit-period slot, at the rate in force
+    float                 _rate      = 0.F; ///< the rate in force, which a tag may replace
+    std::vector<Pending>  _pending{};
+    std::vector<Arriving> _arriving{};
+    std::uint64_t         _sequence = 0ULL;
     /// @brief The two drop totals as far as the working thread has already retired them; the counters add what is still held.
     std::uint64_t _tailBanked = 0ULL;
     std::uint64_t _tagsBanked = 0ULL;
@@ -235,7 +235,7 @@ and counted, oldest first.
 
         std::size_t onOut = 0UZ;
         const auto  sink  = [&](const PpmFrame& frame) {
-            const bool publish = frame.admitted()                                                           //
+            const bool publish = frame.admitted()                                              //
                                  || (frame.outcome == PpmOutcome::CrcFailed && emit_unchecked) //
                                  || (frame.outcome == PpmOutcome::ShortFormat && emit_short);
             if (!publish || onOut >= room) {

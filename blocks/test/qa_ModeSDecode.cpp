@@ -29,7 +29,6 @@
 #include <utility>
 #include <vector>
 
-
 #include <gr4adsb/adsb/ModeS.hpp>
 
 #include "TestSpans.hpp"

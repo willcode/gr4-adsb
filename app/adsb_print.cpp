@@ -50,12 +50,13 @@ struct ConsoleSink : gr::Block<ConsoleSink> {
     std::uint64_t nLines = 0ULL;
 
     [[nodiscard]] gr::work::Status processBulk(gr::InputSpanLike auto& inSpan) {
-        for (const gr::DataSet<std::uint8_t>& record : inSpan) {
+        const std::size_t moved = inSpan.size();
+        for (std::size_t i = 0UZ; i < moved; ++i) {
+            const gr::DataSet<std::uint8_t>& record = inSpan[i];
             std::fwrite(record.signal_values.data(), 1UZ, record.signal_values.size(), stdout);
             std::fputc('\n', stdout);
             ++nLines;
         }
-        const std::size_t moved = inSpan.size();
         if (moved > 0UZ) {
             std::fflush(stdout);
         }
@@ -66,14 +67,14 @@ struct ConsoleSink : gr::Block<ConsoleSink> {
 };
 
 struct Options {
-    std::string device{};              ///< the SoapySDR device string, e.g. "driver=hackrf"
-    std::string file{};                ///< a recorded interleaved int16 capture, instead of a device
-    double      frequency = 1090.0e6;  ///< Hz
-    float       rate      = 4.0e6F;    ///< Hz; must be an even integer multiple of 1 MHz
-    double      bandwidth = 5.0e6;     ///< Hz of analog RF bandwidth
-    double      gain      = 40.0;      ///< dB of receive gain
-    float       threshold = 2.0F;      ///< the framer's preamble nomination ratio
-    double      seconds   = 0.0;       ///< run bound; 0 runs until the source ends or the user interrupts
+    std::string device{};             ///< the SoapySDR device string, e.g. "driver=hackrf"
+    std::string file{};               ///< a recorded interleaved int16 capture, instead of a device
+    double      frequency = 1090.0e6; ///< Hz
+    float       rate      = 4.0e6F;   ///< Hz; must be an even integer multiple of 1 MHz
+    double      bandwidth = 5.0e6;    ///< Hz of analog RF bandwidth
+    double      gain      = 40.0;     ///< dB of receive gain
+    float       threshold = 2.0F;     ///< the framer's preamble nomination ratio
+    double      seconds   = 0.0;      ///< run bound; 0 runs until the source ends or the user interrupts
 };
 
 void usage() {
@@ -207,9 +208,9 @@ int main(int argc, char** argv) {
     gr::Graph flow;
     auto&     magnitude = flow.emplaceBlock<gr::blocks::basic::Abs<std::complex<float>>>();
     auto&     framer    = flow.emplaceBlock<gr4adsb::PpmFramer>({
-               {"sample_rate", options.rate},
-               {"profile", std::string("mode_s")},
-               {"threshold", options.threshold},
+        {"sample_rate", options.rate},
+        {"profile", std::string("mode_s")},
+        {"threshold", options.threshold},
     });
     auto&     decoder   = flow.emplaceBlock<gr4adsb::ModeSDecode>();
     auto&     printer   = flow.emplaceBlock<gr4adsb::AdsbPrinter>();
@@ -229,12 +230,12 @@ int main(int argc, char** argv) {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
         auto& source                    = flow.emplaceBlock<gr::blocks::sdr::SoapySource<std::complex<float>, 1UZ>>({
-                               {"device", driver},
-                               {"device_parameter", parameters},
-                               {"sample_rate", options.rate},
-                               {"frequency", std::vector{options.frequency}},
-                               {"rx_gains", std::vector{options.gain}},
-                               {"rx_bandwidths", std::vector{options.bandwidth}},
+            {"device", driver},
+            {"device_parameter", parameters},
+            {"sample_rate", options.rate},
+            {"frequency", std::vector{options.frequency}},
+            {"rx_gains", std::vector{options.gain}},
+            {"rx_bandwidths", std::vector{options.bandwidth}},
         });
         std::println(stderr, "adsb_print: {} at {:.4f} MHz, {:.3f} MS/s, gain {} dB, bandwidth {:.3f} MHz, threshold {}", options.device, options.frequency / 1e6, static_cast<double>(options.rate) / 1e6, options.gain, options.bandwidth / 1e6, options.threshold);
         wired = flow.connect<"out", "in">(source, magnitude).has_value();
@@ -244,10 +245,10 @@ int main(int argc, char** argv) {
 #endif
     }
 
-    wired = wired                                                              //
-            && flow.connect<"abs", "in">(magnitude, framer).has_value()         //
-            && flow.connect<"out", "in">(framer, decoder).has_value()           //
-            && flow.connect<"out", "in">(decoder, printer).has_value()          //
+    wired = wired                                                       //
+            && flow.connect<"abs", "in">(magnitude, framer).has_value() //
+            && flow.connect<"out", "in">(framer, decoder).has_value()   //
+            && flow.connect<"out", "in">(decoder, printer).has_value()  //
             && flow.connect<"out", "in">(printer, console).has_value();
     if (!wired) {
         std::println(stderr, "adsb_print: the graph could not be connected");

@@ -309,13 +309,13 @@ struct PpmScanner {
 
             const std::uint64_t remainder = remainderOf(frame);
             const PpmFrame      reported{.octets = frame,
-                     .bits                       = bits,
-                     .format                     = format,
-                     .remainder                  = remainder, //
-                     .strong                     = strong / slotSpan,
-                     .weak                       = weak / slotSpan,
-                     .position                   = _offset + position, //
-                     .outcome                    = isLong ? (remainder == 0ULL ? PpmOutcome::Admitted : PpmOutcome::CrcFailed) : PpmOutcome::ShortFormat};
+                .bits                            = bits,
+                .format                          = format,
+                .remainder                       = remainder, //
+                .strong                          = strong / slotSpan,
+                .weak                            = weak / slotSpan,
+                .position                        = _offset + position, //
+                .outcome                         = isLong ? (remainder == 0ULL ? PpmOutcome::Admitted : PpmOutcome::CrcFailed) : PpmOutcome::ShortFormat};
 
             ++counters.nominations;
             switch (reported.outcome) {

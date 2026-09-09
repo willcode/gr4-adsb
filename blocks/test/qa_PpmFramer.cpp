@@ -25,13 +25,13 @@
 
 namespace {
 
-using gr4adsb::PpmFramer;
-using gr4adsb::test::InputSpan;
-using gr4adsb::test::OutputSpan;
 using gr4adsb::PpmCounters;
 using gr4adsb::PpmFrame;
+using gr4adsb::PpmFramer;
 using gr4adsb::PpmOutcome;
 using gr4adsb::PpmScanner;
+using gr4adsb::test::InputSpan;
+using gr4adsb::test::OutputSpan;
 
 using Record = gr::DataSet<std::uint8_t>;
 
