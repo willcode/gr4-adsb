@@ -57,6 +57,13 @@ file:   BasicFileSource<int16_t> ─► InterleavedToComplex ─────► 
 rate has to make a slot a whole number of samples; the framer refuses anything else rather than
 resample behind your back. 2, 4, 6, 8 MS/s are all fine, 2.4 MS/s is not.
 
+**2 MS/s is the floor, and it is a weak one.** At that rate a slot is a single sample, and the framer
+has no sub-sample phase handling: a pulse that straddles two samples splits its energy between a pulse
+slot and a gap slot, so the shape test sees a smaller ratio and the bit decisions between adjacent
+samples turn on quantization noise. Expect fewer frames and many more parity failures than at 4 or
+6 MS/s from the same antenna. An RTL-SDR tops out below 4 MS/s, so 2 MS/s is its only rate here; see
+the RTL-SDR paragraph under Running for the settings that make it usable.
+
 ## The bandwidth note
 
 **`--bandwidth` matters more than `--rate`.** A Mode S pulse is 0.5 µs, which needs several MHz of
@@ -169,6 +176,7 @@ to open a radio that is fussy about its parameter set:
 ./build/app/adsb_print --device "driver=hackrf"        --rate 4e6
 ./build/app/adsb_print --device "driver=uhd,type=b200" --rate 4e6
 ./build/app/adsb_print --device "driver=sdrplay"       --rate 6e6
+./build/app/adsb_print --device "driver=rtlsdr"        --rate 2e6 --agc on
 ```
 
 Then add bandwidth, and on devices with a real gain control the gain, once it streams:
@@ -197,6 +205,25 @@ gain step is added, with the driver reporting `RFGR=9` just before the failing a
 `--agc off` is the default and asks for nothing; the block only ever turns AGC *on*, so there is no
 way from here to force it off on a device that enables it by itself. An SDRplay runs its AGC by
 default, which suits ADS-B.
+
+**On an RTL-SDR, use `--agc on` and no `--gain`.** With a fixed tuner gain the dongle's 8-bit
+samples sit at the bottom of their range: a raw capture at 40 dB had a noise floor of 1.0 LSB rms
+and one at the 49.6 dB maximum 1.4 LSB, so gap slots and bit decisions are made on one or two
+quantization steps. `--agc on` turns on the RTL2832's digital gain as well as the tuner's, which
+lifts the signal into the converter's range. Measured on air, same antenna, 20 s each, at 2 MS/s:
+
+| settings | nominations | admitted | parity failed |
+|---|---:|---:|---:|
+| `--gain 40` | 103 | 12 | 32 |
+| `--gain 49.6` | 226 | 15 | 73 |
+| `--agc on` | 51 | 27 | 1 |
+| `--agc on`, second run | 50 | 18 | 3 |
+| `--agc on --threshold 1.5` | 168 | 27 | 44 |
+
+Traffic differs between windows, but the parity failure rate does not lie: with AGC nearly every
+long nomination is a real frame. A lower `--threshold` at 2 MS/s buys nominations, not frames.
+Interpolating the 2 MS/s capture to 4 MS/s ahead of the framer was also tried offline and made
+things worse, because interpolation smears the pulse into the gap slots the shape test measures.
 
 `--device` takes the SoapySDR device string you would give any other Soapy program. The application
 splits it into the two settings the block wants — the `driver=` key becomes `device` and the rest
