@@ -1,0 +1,177 @@
+# gr4-adsb — an ADS-B receiver as a GNU Radio 4 out-of-tree module
+
+A 1090 MHz Mode S / ADS-B receiver: a block library (the plugin) and one console application that
+runs it. It decodes the extended squitter — aircraft identification, barometric altitude, position
+and velocity — and prints one line per frame.
+
+```
+   29.768  DF17  AB0969  ident   callsign AAL160
+   29.781  DF17  AB0969  airpos  alt 39000 ft  lat 42.40448  lon -71.34696  [AAL160]
+   29.782  DF17  A9A901  veloc   gs 349 kt  track 103 deg  vs -1024 ft/min
+```
+
+The columns are the time in seconds from the frame's own position in the stream, the downlink
+format, the ICAO address, what the message said, and the aircraft's identification in brackets once
+an earlier frame from that address has given one.
+
+## The chain
+
+```
+live:   SoapySource<complex<float>> ──────────────────────────► Abs ─► PpmFramer ─► ModeSDecode ─► AdsbPrinter ─► ConsoleSink
+file:   BasicFileSource<int16_t> ─► InterleavedToComplex ─────► Abs ─► (the same tail)
+```
+
+- **`Abs`** takes the magnitude. Mode S carries nothing in phase, so this is where the complex
+  stream ends.
+- **`PpmFramer`** (this module) reads frames out of the magnitude stream. Pulse-position modulation
+  puts one pulse per bit period, in the first half for a one and the second for a zero, so a bit is
+  decided by comparing the two halves of one period against each other: there is no carrier to
+  acquire and no clock to recover. The framer nominates a position wherever the preamble's four
+  pulses stand out from the gaps by at least `threshold`, reads the frame, and checks the 24-bit
+  parity. Only a frame the parity vouches for consumes its own window; every other nomination
+  advances the search by one sample, so a false nomination cannot swallow the real frame behind it.
+- **`ModeSDecode`** (this module) reads the downlink message into typed metadata and leaves the
+  frame's octets as the payload, so nothing the frame said is lost.
+- **`AdsbPrinter`** (this module) renders one line of text per record, published as a record of its
+  own rather than written to a terminal.
+- **`ConsoleSink`** lives in `app/` and writes each of those lines to stdout. It is the only piece
+  of the chain that assumes a console, which is what makes the rest of it reusable.
+
+## The rate rule
+
+**`--rate` must be an even integer multiple of 1 MHz.** A Mode S slot is half a microsecond, so the
+rate has to make a slot a whole number of samples; the framer refuses anything else rather than
+resample behind your back. 2, 4, 6, 8 MS/s are all fine, 2.4 MS/s is not.
+
+## The bandwidth note
+
+**`--bandwidth` matters more than `--rate`.** A Mode S pulse is 0.5 µs, which needs several MHz of
+analog bandwidth to survive with its edges intact. A receiver whose front end defaults to a
+rate-derived filter — 1536 kHz is a common one — smears the pulses together and admits *nothing*, at
+any sample rate. The default here is 5 MHz for that reason. If a run reports nominations but no
+admitted frames, widen the analog filter before touching anything else.
+
+## Building
+
+The module builds against an installed GNU Radio 4 SDK: core, library and blocks installed into one
+prefix.
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<sdk>
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Options: `-DGR4ADSB_ENABLE_TESTING=OFF` skips the tests, `-DGR4ADSB_WARNINGS_AS_ERRORS=OFF` relaxes
+`-Werror`. The tests need Boost.UT, which is not part of the SDK; point
+`-DGR4ADSB_BOOST_UT_INCLUDE_DIR` at its include directory if it is not already findable.
+
+### The SDK needs the SDR family
+
+The live path needs `gnuradio-4.0/sdr/SoapySource.hpp`, which the blocks project installs only when
+it is configured with **`-DGR4_ENABLE_SDR=ON`** — the family defaults to OFF. Without it this module
+still configures and builds, and `adsb_print` offers `--file` alone; the configure says which of the
+two you got.
+
+Two things about that family are worth knowing when you build against a stock SDK:
+
+- It is the only block family that exports no CMake target — there is no `gnuradio4::gr-sdr` — so
+  `app/CMakeLists.txt` finds its headers on the prefix and `SoapySDR` itself rather than linking one
+  target. If upstream starts exporting the target, that block of CMake collapses to one line.
+- `SoapySource.hpp` includes `gnuradio-4.0/sdr/NamespaceCompatibility.hpp`, which the family does not
+  install (fixed in gnuradio4-blocks #26). Until that fix reaches your SDK, the build tree supplies
+  exactly that one header from a directory holding nothing else, so every other `gnuradio-4.0` header
+  still comes from the prefix. The shim is gated on the file being absent and disappears by itself.
+
+### The plugin
+
+`blocks/CMakeLists.txt` calls `gr_add_block_library` from the SDK's `GnuRadioBlockLib` package — the
+same mechanism core's `test_external/minimal_blocklib` uses, which is the supported way to register
+blocks out of tree. It runs the SDK's registration generator over the three headers that carry
+`GR_REGISTER_BLOCK` and produces:
+
+- `libGr4AdsbBlocksShared.so`, installed under `<prefix>/lib/gnuradio-4/plugins`, and
+- `libGr4AdsbBlocksStatic.a`, which `adsb_print` links.
+
+Either form registers its blocks through the generated `<gnuradio-4.0/Gr4AdsbBlocks.hpp>`, whose
+`gr::blocklib::initGr4AdsbBlocks(registry)` a consumer calls explicitly. Explicit initialization is
+the contract: a shared library nothing references is not recorded in `DT_NEEDED` under the linker's
+default `--as-needed`, so relying on static initializers to register is not portable.
+
+`adsb_print` does not need any of that — it names every block type and uses `emplaceBlock<T>`, which
+is the direct, statically checked route. The registry matters for a consumer that builds a graph
+from a saved description or loads the shared object as a plugin.
+
+**The plugin ABI is versioned and the loader demands an exact match**, so rebuild this module
+against whatever SDK it is going to be loaded into. Upstream core's plugin ABI is currently 1; core
+PR #38 raises it to 2.
+
+## Running
+
+Against a recorded capture — interleaved 16-bit I/Q, host byte order, which is what most SDR
+recorders write:
+
+```
+./build/app/adsb_print --file ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data --rate 2e6
+```
+
+The file run is not paced: it reads as fast as the disk delivers, which is what you want for a
+capture and means the printed timestamps are stream positions rather than wall-clock times. (GNU
+Radio 4's `Throttle` would pace it, but upstream's version needs a tag-propagation policy that is
+not in an upstream release yet, so nothing here uses it.)
+
+With a HackRF:
+
+```
+./build/app/adsb_print --device "driver=hackrf" --rate 4e6 --bandwidth 5e6 --gain 40
+```
+
+With an Ettus B210 over UHD:
+
+```
+./build/app/adsb_print --device "driver=uhd,type=b200" --rate 4e6 --bandwidth 5e6 --gain 40
+```
+
+`--device` takes the SoapySDR device string you would give any other Soapy program. The application
+splits it into the two settings the block wants — the `driver=` key becomes `device` and the rest
+becomes `device_parameter` — so a bare `--device hackrf` works too.
+
+Full command line: `--device`, `--file`, `--frequency` (default 1090e6), `--rate` (default 4e6),
+`--bandwidth` (default 5e6), `--gain` (dB, default 40), `--threshold` (default 2), `--seconds`.
+Exit codes: 0 on a clean stop, 2 on a bad command line, 1 on a graph error, each with the reason on
+stderr. `--gain` is a starting point, not a recommendation; sweep it if the counters printed at exit
+show nominations without admitted frames.
+
+**Upstream's `SoapySource` drops a whole 8192-sample chunk when the graph below it stops taking
+samples** — about 2 ms of air at 4 MS/s, so lost frames — until gnuradio4-blocks #26 merges. Nothing
+here works around it; it shows up as a lower frame rate than the band deserves.
+
+## What is carried, and from where
+
+Most of the chain is upstream GNU Radio 4 and is used as installed. Four headers are carried into
+this repository because they are not in an upstream release:
+
+| Carried into | From |
+|---|---|
+| `blocks/digital/include/gr4adsb/digital/Crc.hpp` | the fork's `algorithm/digital/Crc.hpp` — the parameterized CRC the Mode S parity is one instance of |
+| `blocks/digital/include/gr4adsb/digital/Ppm.hpp` | the fork's `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant |
+| `blocks/digital/include/gr4adsb/digital/PpmFramer.hpp` | the fork's `blocks/digital/PpmFramer.hpp` — the block over that kernel |
+| `blocks/adsb/include/gr4adsb/adsb/{ModeS,AdsbPrinter}.hpp` | the fork's `blocks/adsb/` — the message layer and the renderer |
+
+They keep their contract comments and their tests. Everything was renamed out of the fork's
+namespaces into `gr4adsb`, and the include path is `gr4adsb/…`, so nothing here collides with an
+installed GNU Radio. If these blocks are upstreamed, this module shrinks to the application.
+
+## Next
+
+Two components are named but deliberately not built or wired, because they are not defined yet:
+
+- **A map display.** It attaches to the decoded record stream — `ModeSDecode`'s output, before
+  `AdsbPrinter`, where position, altitude, callsign and velocity are already typed metadata on the
+  record and nothing has to be parsed back out of a rendered line.
+- **A waterfall.** It attaches to the magnitude stream — `Abs`'s output, before `PpmFramer`, which is
+  the last point where every sample is still present. A spectrum display would instead want a tap on
+  the complex stream ahead of `Abs`.
+
+Neither is in the graph. Adding either means one more `emplaceBlock` and one more `connect` at the
+point named above; the existing chain does not have to change to make room.
