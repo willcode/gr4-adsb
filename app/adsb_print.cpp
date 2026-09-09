@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <print>
 #include <string>
@@ -71,10 +72,15 @@ struct Options {
     std::string file{};               ///< a recorded interleaved int16 capture, instead of a device
     double      frequency = 1090.0e6; ///< Hz
     float       rate      = 4.0e6F;   ///< Hz; must be an even integer multiple of 1 MHz
-    double      bandwidth = 5.0e6;    ///< Hz of analog RF bandwidth
-    double      gain      = 40.0;     ///< dB of receive gain
     float       threshold = 2.0F;     ///< the framer's preamble nomination ratio
     double      seconds   = 0.0;      ///< run bound; 0 runs until the source ends or the user interrupts
+
+    // Unset means "do not ask the device for this". The block applies every setting it holds when it opens the
+    // device, and its defaults there are not neutral — 10 dB of gain, 500 kHz of bandwidth — so a value left out
+    // here has to reach the block as an empty vector, not as an absent key.
+    std::optional<double> gain{};      ///< dB of receive gain
+    std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
+    bool                  agc = false; ///< ask for the device's own automatic gain control
 };
 
 void usage() {
@@ -83,8 +89,9 @@ void usage() {
     std::println(stderr, "  --file PATH      replay a recorded capture instead of opening a device");
     std::println(stderr, "  --frequency HZ   center frequency (default 1090e6)");
     std::println(stderr, "  --rate HZ        sample rate, an even integer multiple of 1 MHz (default 4e6)");
-    std::println(stderr, "  --bandwidth HZ   analog RF bandwidth (default 5e6; a 1536 kHz filter admits nothing)");
-    std::println(stderr, "  --gain DB        receive gain (default 40)");
+    std::println(stderr, "  --bandwidth HZ   analog RF bandwidth (default: whatever the device picks for the rate)");
+    std::println(stderr, "  --gain DB        receive gain (default: the device's own)");
+    std::println(stderr, "  --agc on|off     ask for the device's automatic gain control (default off)");
     std::println(stderr, "  --threshold R    framer nomination ratio, greater than one (default 2)");
     std::println(stderr, "  --seconds N      stop after N seconds");
 }
@@ -144,6 +151,13 @@ void usage() {
             options.device = std::string(text());
         } else if (arg == "--file") {
             options.file = std::string(text());
+        } else if (arg == "--agc") {
+            const std::string_view value = text();
+            if (value != "on" && value != "off") {
+                refuse("on or off");
+                return std::nullopt;
+            }
+            options.agc = value == "on";
         } else if (arg == "--frequency" || arg == "--rate" || arg == "--bandwidth" || arg == "--gain" || arg == "--threshold" || arg == "--seconds") {
             const std::optional<double> value = number(text());
             if (!value.has_value()) {
@@ -184,8 +198,8 @@ void usage() {
         std::println(stderr, "adsb_print: --threshold must be greater than one, got {}", options.threshold);
         return std::nullopt;
     }
-    if (options.frequency <= 0.0 || options.bandwidth < 0.0 || options.seconds < 0.0) {
-        std::println(stderr, "adsb_print: --frequency must be positive, and --bandwidth and --seconds must not be negative");
+    if (options.frequency <= 0.0 || options.seconds < 0.0 || options.bandwidth.value_or(1.0) <= 0.0) {
+        std::println(stderr, "adsb_print: --frequency and --bandwidth must be positive, and --seconds must not be negative");
         return std::nullopt;
     }
     if (!options.file.empty() && !std::filesystem::exists(options.file)) {
@@ -244,15 +258,39 @@ int main(int argc, char** argv) {
     } else {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
-        auto& source                    = flow.emplaceBlock<gr::blocks::sdr::SoapySource<std::complex<float>, 1UZ>>({
+
+        // Only the rate and the frequency are asked for unconditionally. The block pushes every setting it holds
+        // when it opens the device, so an empty vector is how a setting is declined: a gain or a bandwidth left off
+        // the command line must arrive empty, or the block's own 10 dB and 500 kHz go to the radio instead. That
+        // matters — an SDRplay refuses the whole activation, `Init() failed: sdrplay_api_Fail`, when it is handed a
+        // combination it cannot serve, and the same device streams happily under SoapySDRUtil, which sets the rate
+        // and nothing else. `gain_mode` is only ever set when AGC is asked for, because the block acts on it only
+        // when true and would otherwise have nothing to say.
+        gr::property_map settings{
             {"device", driver},
             {"device_parameter", parameters},
             {"sample_rate", options.rate},
             {"frequency", std::vector{options.frequency}},
-            {"rx_gains", std::vector{options.gain}},
-            {"rx_bandwidths", std::vector{options.bandwidth}},
-        });
-        std::println(stderr, "adsb_print: {} at {:.4f} MHz, {:.3f} MS/s, gain {} dB, bandwidth {:.3f} MHz, threshold {}", options.device, options.frequency / 1e6, static_cast<double>(options.rate) / 1e6, options.gain, options.bandwidth / 1e6, options.threshold);
+            {"rx_gains", options.gain.has_value() ? std::vector{*options.gain} : std::vector<double>{}},
+            {"rx_bandwidths", options.bandwidth.has_value() ? std::vector{*options.bandwidth} : std::vector<double>{}},
+        };
+        if (options.agc) {
+            settings.insert_or_assign(gr::property_map::key_type("gain_mode"), gr::pmt::Value(true));
+        }
+        auto& source = flow.emplaceBlock<gr::blocks::sdr::SoapySource<std::complex<float>, 1UZ>>(std::move(settings));
+
+        // A failing run has to say what it asked the device for, because that is the whole difference between a
+        // device that streams and one that refuses to start.
+        std::string asked;
+        std::string left;
+        const auto  note = [](std::string& into, std::string_view what) { into.append(into.empty() ? "" : ", ").append(what); };
+        options.gain.has_value() ? note(asked, std::format("gain {} dB", *options.gain)) : note(left, "gain");
+        options.bandwidth.has_value() ? note(asked, std::format("bandwidth {:.3f} MHz", *options.bandwidth / 1e6)) : note(left, "bandwidth");
+        options.agc ? note(asked, "AGC on") : note(left, "gain mode");
+        std::println(stderr, "adsb_print: {} at {:.4f} MHz, {:.3f} MS/s, threshold {}", options.device, options.frequency / 1e6, static_cast<double>(options.rate) / 1e6, options.threshold);
+        std::println(stderr, "adsb_print: asking the device for: rate, frequency{}{}", asked.empty() ? "" : ", ", asked);
+        std::println(stderr, "adsb_print: left at the device's default: {}", left.empty() ? std::string("nothing") : left);
+
         wired = flow.connect<"out", "in">(source, magnitude).has_value();
 #else
         std::println(stderr, "adsb_print: built without SoapySDR, so only --file is available; see the README under Building");

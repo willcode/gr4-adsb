@@ -62,8 +62,12 @@ resample behind your back. 2, 4, 6, 8 MS/s are all fine, 2.4 MS/s is not.
 **`--bandwidth` matters more than `--rate`.** A Mode S pulse is 0.5 µs, which needs several MHz of
 analog bandwidth to survive with its edges intact. A receiver whose front end defaults to a
 rate-derived filter — 1536 kHz is a common one — smears the pulses together and admits *nothing*, at
-any sample rate. The default here is 5 MHz for that reason. If a run reports nominations but no
-admitted frames, widen the analog filter before touching anything else.
+any sample rate.
+
+`--bandwidth` nonetheless has **no default here**: unset, the device picks its own for the rate, and
+that is the setting most likely to make a radio start at all. Set it explicitly once the run works.
+Measured good points on an SDRplay RSP1A: **4 MS/s at 5 MHz** and **6 MS/s at 6 MHz**. If a run
+reports nominations but no admitted frames, widen the analog filter before touching anything else.
 
 ## Building
 
@@ -141,27 +145,43 @@ unconstrained output port, ask for more than any span can offer, and never start
 bounds that port and gives it a ring several chunks deep regardless; with #27 the source sizes the
 chunk from the actual ring instead, and the bound is redundant but harmless.
 
-With a HackRF:
+Start with the rate alone and let the device choose everything else — this is the form most likely
+to open a radio that is fussy about its parameter set:
 
 ```
-./build/app/adsb_print --device "driver=hackrf" --rate 4e6 --bandwidth 5e6 --gain 40
+./build/app/adsb_print --device "driver=hackrf"        --rate 4e6
+./build/app/adsb_print --device "driver=uhd,type=b200" --rate 4e6
+./build/app/adsb_print --device "driver=sdrplay"       --rate 6e6
 ```
 
-With an Ettus B210 over UHD:
+Then add gain and bandwidth once it streams:
 
 ```
-./build/app/adsb_print --device "driver=uhd,type=b200" --rate 4e6 --bandwidth 5e6 --gain 40
+./build/app/adsb_print --device "driver=hackrf"  --rate 4e6 --bandwidth 5e6 --gain 40
+./build/app/adsb_print --device "driver=sdrplay" --rate 6e6 --bandwidth 6e6 --agc on
 ```
+
+**`--gain`, `--bandwidth` and `--agc` are asked for only when you give them.** Left off, the device
+keeps its own gain, its own bandwidth for the rate, and its own gain mode. This is not cosmetic: the
+block pushes every setting it holds when it opens the device, and its own defaults are 10 dB and
+500 kHz, so a parameter set nobody asked for used to reach the radio. An SDRplay refuses the whole
+activation on a combination it cannot serve — `Init() failed: sdrplay_api_Fail` — while the same
+device streams under `SoapySDRUtil --args="driver=sdrplay" --rate=6e6 --direction=RX`, which sets
+the rate and nothing else. The application prints, at start, exactly what it asked the device for
+and what it left alone, so a failed run says which it was.
+
+`--agc off` is the default and asks for nothing; the block only ever turns AGC *on*, so there is no
+way from here to force it off on a device that enables it by itself.
 
 `--device` takes the SoapySDR device string you would give any other Soapy program. The application
 splits it into the two settings the block wants — the `driver=` key becomes `device` and the rest
 becomes `device_parameter` — so a bare `--device hackrf` works too.
 
 Full command line: `--device`, `--file`, `--frequency` (default 1090e6), `--rate` (default 4e6),
-`--bandwidth` (default 5e6), `--gain` (dB, default 40), `--threshold` (default 2), `--seconds`.
-Exit codes: 0 on a clean stop, 2 on a bad command line, 1 on a graph error, each with the reason on
-stderr. `--gain` is a starting point, not a recommendation; sweep it if the counters printed at exit
-show nominations without admitted frames.
+`--threshold` (default 2), `--seconds`, and the three optional device settings `--bandwidth`,
+`--gain` and `--agc on|off`, each left to the device when not given. Exit codes: 0 on a clean stop,
+2 on a bad command line, 1 on a graph error, each with the reason on stderr. Sweep `--gain` if the
+counters printed at exit show nominations without admitted frames.
 
 On an SDK predating **gnuradio4-blocks #26** (merged upstream on 2026-09-09), `SoapySource` dropped a
 whole 8192-sample chunk whenever the graph below it stopped taking samples — about 2 ms of air at
