@@ -120,6 +120,11 @@ capture and means the printed timestamps are stream positions rather than wall-c
 Radio 4's `Throttle` would pace it, but upstream's version needs a tag-propagation policy that is
 not in an upstream release yet, so nothing here uses it.)
 
+On an SDK older than gnuradio4-blocks #27 the file source sizes its reader chunk from an
+unconstrained output port, so it asks for more than any span can offer and the graph never starts.
+The application bounds that port and gives it a ring several chunks deep, which costs nothing once
+the fix lands.
+
 With a HackRF:
 
 ```

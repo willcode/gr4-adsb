@@ -223,7 +223,22 @@ int main(int argc, char** argv) {
         // bits by comparison, so raw converter counts feed it as well as normalized floats do. The run is as fast as
         // the file reads — nothing paces it.
         auto& source = flow.emplaceBlock<gr::blocks::fileio::BasicFileSource<std::int16_t>>({{"file_name", options.file}});
-        auto& pair   = flow.emplaceBlock<gr::blocks::basic::InterleavedToComplex<std::int16_t, std::complex<float>>>();
+
+        // Upstream's file source sizes its asynchronous reader's chunk as `out.max_buffer_size() * sizeof(T)`, and
+        // an unconstrained port reports SIZE_MAX, which that multiplication overflows to SIZE_MAX - 1. The reader
+        // then asks for more than any span can offer on every poll, publishes nothing and returns
+        // INSUFFICIENT_OUTPUT_ITEMS forever, so the graph never starts — the header's own note on `chunkBytes`
+        // predicts exactly this. Bounding the port makes the chunk a real number, and a ring several chunks deep
+        // keeps a whole chunk free most of the time; when it is not, the block simply waits for the reader to drain,
+        // which is ordinary backpressure. Unconditional and harmless once gnuradio4-blocks #27 lands.
+        constexpr std::size_t kReaderChunk = 1UZ << 16U;
+        source.out.max_samples             = kReaderChunk;
+        if (!source.out.resizeBuffer(8UZ * kReaderChunk).has_value()) {
+            std::println(stderr, "adsb_print: could not size the file source's output ring");
+            return 1;
+        }
+
+        auto& pair = flow.emplaceBlock<gr::blocks::basic::InterleavedToComplex<std::int16_t, std::complex<float>>>();
         std::println(stderr, "adsb_print: {} at {:.3f} MS/s, threshold {}", options.file, static_cast<double>(options.rate) / 1e6, options.threshold);
         wired = flow.connect<"out", "interleaved">(source, pair).has_value() && flow.connect<"out", "in">(pair, magnitude).has_value();
     } else {
@@ -285,8 +300,10 @@ int main(int argc, char** argv) {
     if (!done.load(std::memory_order_relaxed)) {
         scheduler.requestStop();
     }
+    const bool endedItself = done.load(std::memory_order_relaxed);
     runner.join();
 
     std::println(stderr, "adsb_print: {} samples, {} nominations -> {} admitted, {} crc failed, {} short; {} lines", framer.nSamples, framer.nNominations, framer.nAdmitted, framer.nCrcFailed, framer.nShortFormat, console.nLines);
+    std::println(stderr, "adsb_print: {}", endedItself ? "the graph ended on its own" : "stopped before the graph ended");
     return failed.load(std::memory_order_relaxed) ? 1 : 0;
 }
