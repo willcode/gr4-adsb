@@ -14,6 +14,20 @@ The columns are the time in seconds from the frame's own position in the stream,
 format, the ICAO address, what the message said, and the aircraft's identification in brackets once
 an earlier frame from that address has given one.
 
+## Target
+
+This demo is built against **GNU Radio 4 main plus the pull requests still expected to merge**, not
+against bare main. At the time of writing that is:
+
+- **core** — main `2885898b` plus #35, #38, #39, #44, #45, #47
+- **library** — main `d2e91398`; nothing of ours is open against it
+- **blocks** — main `3294b9fe` (which already carries #26, merged upstream on 2026-09-09) plus #27,
+  #31, #32, #34, #36, #37
+
+The SDK it was built and tested against on 2026-09-09 was an integration of those branches, not an
+upstream release. It also configures and runs against bare upstream main — the two places where that
+costs something are called out under Building and Running below.
+
 ## The chain
 
 ```
@@ -78,10 +92,11 @@ Two things about that family are worth knowing when you build against a stock SD
 - It is the only block family that exports no CMake target — there is no `gnuradio4::gr-sdr` — so
   `app/CMakeLists.txt` finds its headers on the prefix and `SoapySDR` itself rather than linking one
   target. If upstream starts exporting the target, that block of CMake collapses to one line.
-- `SoapySource.hpp` includes `gnuradio-4.0/sdr/NamespaceCompatibility.hpp`, which the family does not
-  install (fixed in gnuradio4-blocks #26). Until that fix reaches your SDK, the build tree supplies
-  exactly that one header from a directory holding nothing else, so every other `gnuradio-4.0` header
-  still comes from the prefix. The shim is gated on the file being absent and disappears by itself.
+- `SoapySource.hpp` includes `gnuradio-4.0/sdr/NamespaceCompatibility.hpp`, which the family did not
+  install before **gnuradio4-blocks #26**. Only on an SDK predating that fix does the build tree
+  supply exactly that one header from a directory holding nothing else, leaving every other
+  `gnuradio-4.0` header to come from the prefix. The shim is gated on the file being absent, so on a
+  current SDK it does not fire and the configure says so.
 
 ### The plugin
 
@@ -103,8 +118,9 @@ is the direct, statically checked route. The registry matters for a consumer tha
 from a saved description or loads the shared object as a plugin.
 
 **The plugin ABI is versioned and the loader demands an exact match**, so rebuild this module
-against whatever SDK it is going to be loaded into. Upstream core's plugin ABI is currently 1; core
-PR #38 raises it to 2.
+against whatever SDK it is going to be loaded into. On the target SDK above the ABI is **2**
+(`GR_PLUGIN_CURRENT_ABI_VERSION` in `Plugin.hpp`, from core #38); an SDK without #38 is still at 1,
+and a plugin built against one will not load into the other.
 
 ## Running
 
@@ -120,10 +136,10 @@ capture and means the printed timestamps are stream positions rather than wall-c
 Radio 4's `Throttle` would pace it, but upstream's version needs a tag-propagation policy that is
 not in an upstream release yet, so nothing here uses it.)
 
-On an SDK older than gnuradio4-blocks #27 the file source sizes its reader chunk from an
-unconstrained output port, so it asks for more than any span can offer and the graph never starts.
-The application bounds that port and gives it a ring several chunks deep, which costs nothing once
-the fix lands.
+Only on an SDK predating **gnuradio4-blocks #27** does the file source size its reader chunk from an
+unconstrained output port, ask for more than any span can offer, and never start. The application
+bounds that port and gives it a ring several chunks deep regardless; with #27 the source sizes the
+chunk from the actual ring instead, and the bound is redundant but harmless.
 
 With a HackRF:
 
@@ -147,9 +163,10 @@ Exit codes: 0 on a clean stop, 2 on a bad command line, 1 on a graph error, each
 stderr. `--gain` is a starting point, not a recommendation; sweep it if the counters printed at exit
 show nominations without admitted frames.
 
-**Upstream's `SoapySource` drops a whole 8192-sample chunk when the graph below it stops taking
-samples** — about 2 ms of air at 4 MS/s, so lost frames — until gnuradio4-blocks #26 merges. Nothing
-here works around it; it shows up as a lower frame rate than the band deserves.
+On an SDK predating **gnuradio4-blocks #26** (merged upstream on 2026-09-09), `SoapySource` dropped a
+whole 8192-sample chunk whenever the graph below it stopped taking samples — about 2 ms of air at
+4 MS/s, so lost frames. Nothing here works around it; on such an SDK it shows up as a lower frame
+rate than the band deserves.
 
 ## What is carried, and from where
 
