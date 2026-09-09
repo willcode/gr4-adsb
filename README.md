@@ -148,15 +148,24 @@ here works around it; it shows up as a lower frame rate than the band deserves.
 
 ## What is carried, and from where
 
-Most of the chain is upstream GNU Radio 4 and is used as installed. Four headers are carried into
-this repository because they are not in an upstream release:
+Most of the chain is upstream GNU Radio 4 and is used as installed. What follows is carried into this
+repository because it is not in an upstream release. It comes from the willcode forks of GNU Radio 4 —
+[gnuradio4-blocks](https://github.com/willcode/gnuradio4-blocks) and
+[gnuradio4-library](https://github.com/willcode/gnuradio4-library) — branch `rework`, blocks at
+`f634dfc0` and library at `cfe5081`. Each row names the commit that last touched the file it was taken
+from, so a later sync can tell at a glance what has moved.
 
-| Carried into | From |
-|---|---|
-| `blocks/digital/include/gr4adsb/digital/Crc.hpp` | the fork's `algorithm/digital/Crc.hpp` — the parameterized CRC the Mode S parity is one instance of |
-| `blocks/digital/include/gr4adsb/digital/Ppm.hpp` | the fork's `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant |
-| `blocks/digital/include/gr4adsb/digital/PpmFramer.hpp` | the fork's `blocks/digital/PpmFramer.hpp` — the block over that kernel |
-| `blocks/adsb/include/gr4adsb/adsb/{ModeS,AdsbPrinter}.hpp` | the fork's `blocks/adsb/` — the message layer and the renderer |
+| Carried into | Taken from | Commit |
+|---|---|---|
+| `blocks/digital/…/Crc.hpp` | library `algorithm/digital/Crc.hpp` — the parameterized CRC the Mode S parity is one instance of | `a5ca312` |
+| `blocks/digital/…/Ppm.hpp` | library `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant | `52f03fa` |
+| `blocks/digital/…/PpmFramer.hpp` | blocks `blocks/digital/PpmFramer.hpp` — the block over that kernel | `9ee457d2` |
+| `blocks/adsb/…/ModeS.hpp` | blocks `blocks/adsb/ModeS.hpp` — the message layer | `9fd023db` |
+| `blocks/adsb/…/AdsbPrinter.hpp` | blocks `blocks/adsb/AdsbPrinter.hpp` — the renderer | `23fb32f4` |
+| `blocks/test/qa_PpmFramer.cpp` | blocks `blocks/digital/test/qa_PpmFramer.cpp` | `9ee457d2` |
+| `blocks/test/qa_ModeSDecode.cpp` | blocks `blocks/adsb/test/qa_ModeSDecode.cpp` | `9fd023db` |
+| `blocks/test/qa_AdsbPrinter.cpp` | blocks `blocks/adsb/test/qa_AdsbPrinter.cpp` | `23fb32f4` |
+| `blocks/test/TestSpans.hpp` | blocks `blocks/digital/test/TestSpans.hpp` | `ca84b8f4` |
 
 They keep their contract comments and their tests. Everything was renamed out of the fork's
 namespaces into `gr4adsb`, and the include path is `gr4adsb/…`, so nothing here collides with an
