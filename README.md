@@ -84,6 +84,23 @@ Options: `-DGR4ADSB_ENABLE_TESTING=OFF` skips the tests, `-DGR4ADSB_WARNINGS_AS_
 `-Werror`. The tests need Boost.UT, which is not part of the SDK; point
 `-DGR4ADSB_BOOST_UT_INCLUDE_DIR` at its include directory if it is not already findable.
 
+### Building the SDK
+
+The three upstream projects install into one prefix in the order core, library, blocks, each
+configured with **`-DENABLE_TESTING=OFF`** (their default is ON):
+
+```
+cmake -S gnuradio4-core    -B build-core    -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=OFF -DCMAKE_INSTALL_PREFIX=<sdk>
+cmake -S gnuradio4-library -B build-library -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=OFF -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_INSTALL_PREFIX=<sdk>
+cmake -S gnuradio4-blocks  -B build-blocks  -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTING=OFF -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_INSTALL_PREFIX=<sdk> -DGR4_ENABLE_SDR=ON
+```
+
+with `cmake --build` and `cmake --install` after each. Testing off is required, not a shortcut. The
+suites are no part of an SDK and need Boost.UT, and with tests on the blocks tree has to compile
+every family's tests before it can install; a test that includes another family's headers without
+linking that family compiles only when a blocks install already sits in the prefix, which a fresh
+SDK build does not have. This module brings its own tests and runs them against the installed SDK.
+
 ### The SDK needs the SDR family
 
 The live path needs `gnuradio-4.0/sdr/SoapySource.hpp`, which the blocks project installs only when
