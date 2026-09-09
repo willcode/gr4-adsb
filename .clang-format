@@ -1,0 +1,19 @@
+BasedOnStyle: LLVM
+AllowShortCaseLabelsOnASingleLine: true
+# 2000 keeps the column length effectively unlimited, since 0 does not always work as expected.
+ColumnLimit: 2000
+AlignAfterOpenBracket: DontAlign
+BreakBeforeBraces: Attach
+IndentWidth: 4
+AccessModifierOffset: -4
+IndentRequiresClause: false
+AllowShortCompoundRequirementOnASingleLine: true
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignConsecutiveMacros: true
+MaxEmptyLinesToKeep: 1
+AlwaysBreakTemplateDeclarations: true
+PointerAlignment: Left
+ReferenceAlignment: Left
+SpaceAfterTemplateKeyword: false
+InsertBraces: true
