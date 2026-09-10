@@ -1,9 +1,9 @@
 add_executable(adsb adsb.cpp)
 
-# The application names every block type and builds its chain with emplaceBlock<T>, so the block families' include
-# paths and the SDK are the whole of what it needs to run; it links neither form of the module's block library.
-# --verbose adds the other route: it opens the shared block library through gr::PluginLoader, which reaches the
-# process-wide block and scheduler registries, and those are defined in gnuradio-blocklib-core.
+# The application names every block type and builds its chain with emplaceBlock<T>, so it needs the block families'
+# include paths and the SDK, not the module's block library. --verbose opens the shared block library through
+# gr::PluginLoader, which uses the process-wide block and scheduler registries; those are defined in
+# gnuradio-blocklib-core.
 target_link_libraries(
   adsb
   PRIVATE gr4adsb-digital
@@ -13,10 +13,10 @@ target_link_libraries(
           gnuradio4::gr-fileio
           gnuradio-options)
 
-# Where --verbose looks when --plugin-dir does not say. The build writes the shared block library into the build tree
-# and the install puts a second copy under the prefix, so both paths are compiled in and the application picks the one
-# that belongs to the copy of it that is running — the executable's own directory is the test. An SDK that builds no
-# shared block library leaves the first empty, and the installed path is then the only candidate.
+# The two directories --verbose can read when --plugin-dir is not given: the build tree's, where the shared block
+# library is written, and the install prefix's. Both are compiled in, and the application selects between them by its
+# own directory at run time. When the SDK builds no shared block library the first is empty and only the installed
+# path remains.
 if(TARGET Gr4AdsbBlocksShared)
   set(GR4ADSB_BUILD_PLUGIN_DIR "$<TARGET_FILE_DIR:Gr4AdsbBlocksShared>")
 else()
@@ -28,11 +28,11 @@ target_compile_definitions(
           "GR4ADSB_BUILD_PLUGIN_DIR=\"${GR4ADSB_BUILD_PLUGIN_DIR}\""
           "GR4ADSB_INSTALL_PLUGIN_DIR=\"${CMAKE_INSTALL_FULL_LIBDIR}/gnuradio-4/plugins\"")
 
-# The SDR family is optional in the SDK, and when it is there it reaches a consumer in one of two shapes. An SDK that
-# exports gnuradio4::gr-sdr carries the sdr include path, the algorithm headers SoapySource.hpp pulls in and SoapySDR
-# itself on that one target, so linking it is the whole live path. An SDK that installs the sdr headers but exports no
-# target for them leaves the header and SoapySDR to be found by hand; with neither, the application offers --file
-# replay alone. The configure line says which of the three this build got.
+# The SDR family is optional in the SDK and reaches a consumer in one of two shapes. An SDK that exports
+# gnuradio4::gr-sdr carries the sdr include path, the algorithm headers SoapySource.hpp pulls in and SoapySDR itself on
+# that one target, so linking it is the whole live path. An SDK that installs the sdr headers but exports no target for
+# them leaves the header and SoapySDR to be found by hand. With neither, the application offers --file replay alone.
+# The configure line says which of the three this build got.
 if(TARGET gnuradio4::gr-sdr)
   message(STATUS "gr4-adsb: the SDK exports gnuradio4::gr-sdr, building the live receive path")
   target_compile_definitions(adsb PRIVATE GR4ADSB_HAVE_SOAPY)

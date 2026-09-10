@@ -17,10 +17,10 @@ if(NOT TARGET ut)
   endif()
 endif()
 
-# The blocks are header only and the tests instantiate them directly, so no test links the block library: what they
-# need is the include path of the family under test and the core the headers are written against. blocklib-core comes
-# with it because core's plugin loader refers to the global block and scheduler registries, which are defined there —
-# leave it off and a test that stands up a graph fails to link on gr::globalBlockRegistry.
+# The blocks are header only and the tests instantiate them directly, so no test links the block library; each needs
+# the include path of the family under test and the core its headers are written against. blocklib-core is also
+# required: the global block and scheduler registries are defined there, and a test that stands up a graph does not
+# link without gr::globalBlockRegistry.
 foreach(qa IN ITEMS qa_PpmFramer qa_ModeSDecode qa_AdsbPrinter)
   add_executable(${qa} ${qa}.cpp)
   target_link_libraries(${qa} PRIVATE gr4adsb-digital gr4adsb-adsb gnuradio4::gnuradio-core

@@ -3,11 +3,11 @@
 // Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
 // File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
 //
-// SoapySource, BasicFileSource and InterleavedToComplex are GNU Radio 4's own blocks, used as installed; PpmFramer,
-// ModeSDecode and AdsbPrinter are this module's, and ConsoleSink is defined below because it is the only piece that
-// assumes a terminal. The framer takes the complex samples themselves rather than their magnitudes, because deciding
-// a frame at the sub-sample phase its preamble sits on needs what an interpolation reads and a magnitude stream has
-// thrown away.
+// SoapySource, BasicFileSource and InterleavedToComplex come from GNU Radio 4. PpmFramer, ModeSDecode and AdsbPrinter
+// come from this module. ConsoleSink is defined below; it is the only block in the chain that assumes a terminal.
+//
+// The framer takes complex samples rather than magnitudes: its sub-sample phase search interpolates the signal, and
+// a magnitude stream does not carry what the interpolation reads.
 
 #include <algorithm>
 #include <array>
@@ -53,7 +53,7 @@ std::atomic<bool> gStop{false};
 
 extern "C" void onSignal(int) { gStop.store(true, std::memory_order_relaxed); }
 
-/// @brief One text record in, one line on stdout. `AdsbPrinter` did the rendering; this only writes what it published.
+/// @brief One text record in, one line on stdout. The record arrives already rendered.
 struct ConsoleSink : gr::Block<ConsoleSink> {
     gr::PortIn<gr::DataSet<std::uint8_t>, gr::Async> in;
 
@@ -73,7 +73,7 @@ struct ConsoleSink : gr::Block<ConsoleSink> {
             std::fflush(stdout);
         }
         std::ignore = inSpan.consume(moved);
-        // frames are seconds apart on a quiet band, so an empty span is the normal case and has to say so
+        // frames are seconds apart on a quiet band, so an empty span is the normal case and is reported as one
         return moved == 0UZ ? gr::work::Status::INSUFFICIENT_INPUT_ITEMS : gr::work::Status::OK;
     }
 };
@@ -89,15 +89,15 @@ struct Options {
     std::uint32_t phaseSteps  = 8U;   ///< sub-sample offsets a candidate is re-tested at; 1 turns the fine step off
     float         coarseRatio = 0.5F; ///< the share of `threshold` the integer-position test admits a candidate at
 
-    // Unset means "do not ask the device for this". The block applies every setting it holds when it opens the
-    // device, and its defaults there are not neutral — 10 dB of gain, 500 kHz of bandwidth — so a value left out
-    // here has to reach the block as an empty vector, not as an absent key.
+    // Unset means the device is not asked for this setting. SoapySource applies every setting it holds when it opens
+    // the device, and its own defaults are 10 dB of gain and 500 kHz of bandwidth, so a setting left off the command
+    // line must reach the block as an empty vector rather than as an absent key.
     std::optional<double> gain{};      ///< dB of receive gain
     std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
     bool                  agc = false; ///< ask for the device's own automatic gain control
 
-    bool        verbose = false; ///< before running, report this module's blocks as the block registry sees them
-    std::string pluginDir{};     ///< where that report looks for the plugin; `parse` fills in the default
+    bool        verbose = false; ///< load the module's block library and print the registry keys it adds
+    std::string pluginDir{};     ///< directory --verbose loads from; `parse` fills in the default
 };
 
 void usage() {
@@ -113,11 +113,11 @@ void usage() {
     std::println(stderr, "  --phase-steps N  sub-sample offsets each candidate is re-tested at; 1 turns the fine step off (default 8)");
     std::println(stderr, "  --coarse-ratio R share of the threshold the integer-position test admits a candidate at, in (0, 1] (default 0.5)");
     std::println(stderr, "  --seconds N      stop after N seconds");
-    std::println(stderr, "  --verbose        load this module's plugin and list the blocks it registers, then run as usual");
-    std::println(stderr, "  --plugin-dir DIR where --verbose looks for the plugin (default: this build's own plugin directory)");
+    std::println(stderr, "  --verbose        load the module's block library and print the registry keys it adds, then run");
+    std::println(stderr, "  --plugin-dir DIR directory --verbose loads from (default: this build's own plugin directory)");
 }
 
-/// @brief @p text as a number, and nothing when it is not one in full — so "4e6x" is refused rather than read as 4e6.
+/// @brief @p text as a number, and nothing unless the whole string is one: "4e6x" is refused, not read as 4e6.
 [[nodiscard]] std::optional<double> number(std::string_view text) {
     try {
         std::size_t  used  = 0UZ;
@@ -168,12 +168,12 @@ void usage() {
     return ec ? std::nullopt : std::optional<std::filesystem::path>(fromArgv.parent_path());
 }
 
-/// @brief The plugin directory that belongs to the copy of this application that is running.
+/// @brief The plugin directory for the running executable.
 ///
-/// There are two, and the build compiles both in: the one the build writes the shared block library into, and the one
-/// `cmake --install` puts a second copy of it in under the prefix. Which of them this process should read is settled
-/// by where the process itself is, because reading both would open two identical libraries and register the module's
-/// blocks twice. `--plugin-dir` overrides the choice, which is also the answer for an install whose prefix moved.
+/// The build writes the shared block library into the build tree and `cmake --install` writes a second copy under the
+/// install prefix. Both paths are compiled in, and the executable's own directory selects between them: loading both
+/// would open two copies of the same library and register its blocks twice. `--plugin-dir` overrides the selection,
+/// which is what an install moved away from its configured prefix needs.
 [[nodiscard]] std::string defaultPluginDirectory(const char* argv0) {
     const std::string_view                     build = GR4ADSB_BUILD_PLUGIN_DIR;
     const std::optional<std::filesystem::path> here  = executableDirectory(argv0);
@@ -256,7 +256,7 @@ void usage() {
         std::println(stderr, "adsb: give exactly one of --device and --file");
         return std::nullopt;
     }
-    // the framer's own rule, asked of the framer, so the application and the block cannot disagree about it
+    // the rate rule belongs to the framer and is asked of it, so the application cannot disagree with the block
     if (gr4adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
         std::println(stderr, "adsb: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
         return std::nullopt;
@@ -283,15 +283,15 @@ void usage() {
     return options;
 }
 
-/// @brief Load this module's plugin from @p directory and report what it put into the block registry.
+/// @brief Load the shared block libraries in @p directory and print the registry keys they add.
 ///
-/// This is the module's other face, and the report is the demonstration. The chain below is built with
-/// `emplaceBlock<T>`, which needs the block headers and nothing else, so no block of this module is registered when
-/// this runs: every key listed here came out of the shared library the loader opened. Those keys are what a consumer
-/// building a graph from a saved description would name its blocks by.
+/// The chain below uses `emplaceBlock<T>` and does not need the registry, so no block of this module is registered
+/// when this runs and every key printed came from a loaded library. Those keys are the names a graph built from a
+/// saved description would use.
 ///
-/// The loader is done with when the report is: a shared object that registers from its own static initializers is
-/// kept mapped for the life of the process, because the factories it entered point into its code.
+/// The loader is destroyed when this function returns; the library it opened stays mapped. `gr::PluginLoader` keeps a
+/// shared object that registered blocks from its static initializers mapped for the life of the process, because the
+/// registry then holds factory pointers into that object's code.
 void reportPlugins(const std::string& directory) {
     gr::BlockRegistry&       registry = gr::globalBlockRegistry();
     std::vector<std::string> before   = registry.keys();
@@ -356,18 +356,16 @@ int main(int argc, char** argv) {
 
     bool wired = true;
     if (!options.file.empty()) {
-        // A capture is interleaved int16 and the file source hands those out as they lie; pairing them into complex
-        // is the only conversion needed. No scaling block belongs here: the framer nominates on a ratio and decides
-        // bits by comparison, so raw converter counts feed it as well as normalized floats do. The run is as fast as
-        // the file reads — nothing paces it.
+        // A capture is interleaved int16, so pairing the samples into complex is the only conversion needed. The
+        // framer nominates on a ratio and decides bits by comparison, so converter counts serve as well as
+        // normalized floats and no scaling block is required. Nothing paces the run; it goes as fast as the file
+        // reads.
         auto& source = flow.emplaceBlock<gr::blocks::fileio::BasicFileSource<std::int16_t>>({{"file_name", options.file}});
 
-        // The file source fills its output from a reader thread, one read at a time, and it takes the size of a
-        // read from what its output port says it can carry. So the application sets both numbers: 64 ki samples
-        // is the bound on the port and therefore the size of a read, and a ring eight reads deep keeps a whole
-        // read's worth of room free most of the time. When it is not free the reader waits for the graph to
-        // drain it, which is ordinary backpressure. Leaving the port unbounded is the case to avoid: it reports
-        // SIZE_MAX samples, and no read of that size can be published.
+        // The file source reads on a thread of its own and takes the size of each read from the bound on its output
+        // port. An unbounded port reports SIZE_MAX samples, which is not a size any read can publish, so the bound
+        // is required: 64 ki samples is the read size, and a ring eight reads deep leaves room for a whole read
+        // most of the time. When it does not, the reader waits for the graph to drain the ring.
         constexpr std::size_t kReaderChunk = 1UZ << 16U;
         source.out.max_samples             = kReaderChunk;
         if (!source.out.resizeBuffer(8UZ * kReaderChunk).has_value()) {
@@ -382,13 +380,11 @@ int main(int argc, char** argv) {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
 
-        // Only the rate and the frequency are asked for unconditionally. The block pushes every setting it holds
-        // when it opens the device, so an empty vector is how a setting is declined: a gain or a bandwidth left off
-        // the command line must arrive empty, or the block's own 10 dB and 500 kHz go to the radio instead. That
-        // matters — an SDRplay refuses the whole activation, `Init() failed: sdrplay_api_Fail`, when it is handed a
-        // combination it cannot serve, and the same device streams happily under SoapySDRUtil, which sets the rate
-        // and nothing else. `gain_mode` is only ever set when AGC is asked for, because the block acts on it only
-        // when true and would otherwise have nothing to say.
+        // The rate and the frequency are asked for unconditionally; a gain or a bandwidth left off the command line
+        // arrives as an empty vector, which is how SoapySource is told not to set it. An absent key would instead
+        // leave the block's own defaults, 10 dB of gain and 500 kHz of bandwidth, to reach the radio. An SDRplay
+        // handed a combination it cannot serve refuses the whole activation with `Init() failed: sdrplay_api_Fail`.
+        // `gain_mode` is set only when AGC is asked for, because the block acts on it only when it is true.
         gr::property_map settings{
             {"device", driver},
             {"device_parameter", parameters},
@@ -402,8 +398,8 @@ int main(int argc, char** argv) {
         }
         auto& source = flow.emplaceBlock<gr::blocks::sdr::SoapySource<std::complex<float>, 1UZ>>(std::move(settings));
 
-        // A failing run has to say what it asked the device for, because that is the whole difference between a
-        // device that streams and one that refuses to start.
+        // The startup lines name every setting asked for and every one left to the device, which is what a run that
+        // fails to start needs on stderr.
         std::string asked;
         std::string left;
         const auto  note = [](std::string& into, std::string_view what) { into.append(into.empty() ? "" : ", ").append(what); };
@@ -438,8 +434,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // The scheduler's result carries the reason a block refused to start — the framer throws on a rate it cannot
-    // slot, for instance — so a run that decodes nothing still says why.
+    // The scheduler's result carries the reason a block refused to start, such as the framer's exception on a rate
+    // that does not divide into whole slots, so a run that decodes nothing still prints why.
     std::atomic<bool> done{false};
     std::atomic<bool> failed{false};
     std::thread       runner([&scheduler, &done, &failed] {
