@@ -39,16 +39,12 @@ likely to open this way.
 ```
 ./build/app/adsb --device "driver=rtlsdr"        --rate 2e6 --agc on
 ./build/app/adsb --device "driver=sdrplay"       --rate 6e6
-./build/app/adsb --device "driver=hackrf"        --rate 4e6
+./build/app/adsb --device "driver=hackrf"        --rate 4e6 --gain 90
 ./build/app/adsb --device "driver=uhd,type=b200" --rate 4e6
 ```
 
-Once a device streams, add the analog bandwidth, and on a device with a real gain control the gain:
-
-```
-./build/app/adsb --device "driver=hackrf"  --rate 4e6 --bandwidth 5e6 \
-                 --gain 40
-```
+Once a device streams, add what it needs: the RTL-SDR its AGC, the HackRF a high gain, and on a
+device whose default filter is narrower than the pulses, the analog bandwidth (see Running).
 
 ## How it works
 
@@ -154,6 +150,12 @@ steps. `--agc on` turns on the RTL2832's digital gain as well as the tuner's and
 into the converter's range. `--agc off` is the default and asks for nothing; the block only ever
 turns AGC on, so there is no way from here to force it off on a device that enables it by itself. An
 SDRplay runs its AGC by default, which suits ADS-B.
+
+**A HackRF needs `--gain 90` or thereabouts.** The driver opens the radio with 16 dB on the LNA and
+16 dB on the VGA, which leaves the noise floor below one step of the 8-bit converter, so only a
+nearby aircraft is heard. `--gain` is SoapySDR's overall gain and the HackRF driver splits it
+across the amplifier, the LNA and the VGA; around 90 dB is a good point at 4 MS/s, and 110 dB
+overloads the front end. Leave `--bandwidth` to the driver unless a measurement says otherwise.
 
 **`--verbose` loads the module's block library through `gr::PluginLoader` before the run and prints
 the registry keys it adds.** The chain itself never uses the registry, so the keys printed are
