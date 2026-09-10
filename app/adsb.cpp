@@ -1,4 +1,4 @@
-// adsb_print — the demo application: build the 1090 MHz receive chain, run it, print one line per decoded frame.
+// adsb — the demo application: build the 1090 MHz receive chain, run it, print one line per decoded frame.
 //
 // Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
 // File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
@@ -90,7 +90,7 @@ struct Options {
 };
 
 void usage() {
-    std::println(stderr, "usage: adsb_print (--device <soapy device> | --file <interleaved int16 capture>)");
+    std::println(stderr, "usage: adsb (--device <soapy device> | --file <interleaved int16 capture>)");
     std::println(stderr, "  --device STR     SoapySDR device string, e.g. \"driver=hackrf\" or \"driver=uhd,type=b200\"");
     std::println(stderr, "  --file PATH      replay a recorded capture instead of opening a device");
     std::println(stderr, "  --frequency HZ   center frequency (default 1090e6)");
@@ -149,7 +149,7 @@ void usage() {
         const std::string_view arg(argv[i]);
         const bool             hasValue = i + 1 < argc;
         const auto             text     = [&]() -> std::string_view { return hasValue ? std::string_view(argv[++i]) : std::string_view{}; };
-        const auto             refuse   = [&arg](std::string_view what) { std::println(stderr, "adsb_print: {} needs {}", arg, what); };
+        const auto             refuse   = [&arg](std::string_view what) { std::println(stderr, "adsb: {} needs {}", arg, what); };
 
         if (!hasValue && arg != "--help") {
             refuse("a value");
@@ -196,35 +196,35 @@ void usage() {
             }
         } else {
             if (arg != "--help") {
-                std::println(stderr, "adsb_print: unknown argument {}", arg);
+                std::println(stderr, "adsb: unknown argument {}", arg);
             }
             return std::nullopt;
         }
     }
 
     if (options.device.empty() == options.file.empty()) {
-        std::println(stderr, "adsb_print: give exactly one of --device and --file");
+        std::println(stderr, "adsb: give exactly one of --device and --file");
         return std::nullopt;
     }
     // the framer's own rule, asked of the framer, so the application and the block cannot disagree about it
     if (gr4adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
-        std::println(stderr, "adsb_print: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
+        std::println(stderr, "adsb: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
         return std::nullopt;
     }
     if (options.threshold <= 1.F) {
-        std::println(stderr, "adsb_print: --threshold must be greater than one, got {}", options.threshold);
+        std::println(stderr, "adsb: --threshold must be greater than one, got {}", options.threshold);
         return std::nullopt;
     }
     if (!(options.coarseRatio > 0.F) || options.coarseRatio > 1.F) {
-        std::println(stderr, "adsb_print: --coarse-ratio must lie in (0, 1], because a coarse test stricter than the fine one would refuse what the fine one would keep, got {}", options.coarseRatio);
+        std::println(stderr, "adsb: --coarse-ratio must lie in (0, 1], because a coarse test stricter than the fine one would refuse what the fine one would keep, got {}", options.coarseRatio);
         return std::nullopt;
     }
     if (options.frequency <= 0.0 || options.seconds < 0.0 || options.bandwidth.value_or(1.0) <= 0.0) {
-        std::println(stderr, "adsb_print: --frequency and --bandwidth must be positive, and --seconds must not be negative");
+        std::println(stderr, "adsb: --frequency and --bandwidth must be positive, and --seconds must not be negative");
         return std::nullopt;
     }
     if (!options.file.empty() && !std::filesystem::exists(options.file)) {
-        std::println(stderr, "adsb_print: {} does not exist", options.file);
+        std::println(stderr, "adsb: {} does not exist", options.file);
         return std::nullopt;
     }
     return options;
@@ -270,12 +270,12 @@ int main(int argc, char** argv) {
         constexpr std::size_t kReaderChunk = 1UZ << 16U;
         source.out.max_samples             = kReaderChunk;
         if (!source.out.resizeBuffer(8UZ * kReaderChunk).has_value()) {
-            std::println(stderr, "adsb_print: could not size the file source's output ring");
+            std::println(stderr, "adsb: could not size the file source's output ring");
             return 1;
         }
 
         auto& pair = flow.emplaceBlock<gr::blocks::basic::InterleavedToComplex<std::int16_t, std::complex<float>>>();
-        std::println(stderr, "adsb_print: {} at {:.3f} MS/s, threshold {}, {} phase steps at a coarse ratio of {}", options.file, static_cast<double>(options.rate) / 1e6, options.threshold, options.phaseSteps, options.coarseRatio);
+        std::println(stderr, "adsb: {} at {:.3f} MS/s, threshold {}, {} phase steps at a coarse ratio of {}", options.file, static_cast<double>(options.rate) / 1e6, options.threshold, options.phaseSteps, options.coarseRatio);
         wired = flow.connect<"out", "interleaved">(source, pair).has_value() && flow.connect<"out", "in">(pair, framer).has_value();
     } else {
 #ifdef GR4ADSB_HAVE_SOAPY
@@ -309,13 +309,13 @@ int main(int argc, char** argv) {
         options.gain.has_value() ? note(asked, std::format("gain {} dB", *options.gain)) : note(left, "gain");
         options.bandwidth.has_value() ? note(asked, std::format("bandwidth {:.3f} MHz", *options.bandwidth / 1e6)) : note(left, "bandwidth");
         options.agc ? note(asked, "AGC on") : note(left, "gain mode");
-        std::println(stderr, "adsb_print: {} at {:.4f} MHz, {:.3f} MS/s, threshold {}, {} phase steps at a coarse ratio of {}", options.device, options.frequency / 1e6, static_cast<double>(options.rate) / 1e6, options.threshold, options.phaseSteps, options.coarseRatio);
-        std::println(stderr, "adsb_print: asking the device for: rate, frequency{}{}", asked.empty() ? "" : ", ", asked);
-        std::println(stderr, "adsb_print: left at the device's default: {}", left.empty() ? std::string("nothing") : left);
+        std::println(stderr, "adsb: {} at {:.4f} MHz, {:.3f} MS/s, threshold {}, {} phase steps at a coarse ratio of {}", options.device, options.frequency / 1e6, static_cast<double>(options.rate) / 1e6, options.threshold, options.phaseSteps, options.coarseRatio);
+        std::println(stderr, "adsb: asking the device for: rate, frequency{}{}", asked.empty() ? "" : ", ", asked);
+        std::println(stderr, "adsb: left at the device's default: {}", left.empty() ? std::string("nothing") : left);
 
         wired = flow.connect<"out", "in">(source, framer).has_value();
 #else
-        std::println(stderr, "adsb_print: built without SoapySDR, so only --file is available; see the README under Building");
+        std::println(stderr, "adsb: built without SoapySDR, so only --file is available; see the README under Building");
         return 1;
 #endif
     }
@@ -325,7 +325,7 @@ int main(int argc, char** argv) {
             && flow.connect<"out", "in">(decoder, printer).has_value() //
             && flow.connect<"out", "in">(printer, console).has_value();
     if (!wired) {
-        std::println(stderr, "adsb_print: the graph could not be connected");
+        std::println(stderr, "adsb: the graph could not be connected");
         return 1;
     }
 
@@ -333,7 +333,7 @@ int main(int argc, char** argv) {
 
     gr::scheduler::Simple<> scheduler;
     if (!scheduler.exchange(std::move(flow)).has_value()) {
-        std::println(stderr, "adsb_print: the scheduler refused the graph");
+        std::println(stderr, "adsb: the scheduler refused the graph");
         return 1;
     }
 
@@ -343,7 +343,7 @@ int main(int argc, char** argv) {
     std::atomic<bool> failed{false};
     std::thread       runner([&scheduler, &done, &failed] {
         if (const auto result = scheduler.runAndWait(); !result.has_value()) {
-            std::println(stderr, "adsb_print: the graph stopped: {}", result.error().message);
+            std::println(stderr, "adsb: the graph stopped: {}", result.error().message);
             failed.store(true, std::memory_order_relaxed);
         }
         done.store(true, std::memory_order_relaxed);
@@ -362,7 +362,7 @@ int main(int argc, char** argv) {
     const bool endedItself = done.load(std::memory_order_relaxed);
     runner.join();
 
-    std::println(stderr, "adsb_print: {} samples, {} candidates -> {} nominations -> {} admitted, {} crc failed, {} short; {} lines", framer.nSamples, framer.nCandidates, framer.nNominations, framer.nAdmitted, framer.nCrcFailed, framer.nShortFormat, console.nLines);
-    std::println(stderr, "adsb_print: {}", endedItself ? "the graph ended on its own" : "stopped before the graph ended");
+    std::println(stderr, "adsb: {} samples, {} candidates -> {} nominations -> {} admitted, {} crc failed, {} short; {} lines", framer.nSamples, framer.nCandidates, framer.nNominations, framer.nAdmitted, framer.nCrcFailed, framer.nShortFormat, console.nLines);
+    std::println(stderr, "adsb: {}", endedItself ? "the graph ended on its own" : "stopped before the graph ended");
     return failed.load(std::memory_order_relaxed) ? 1 : 0;
 }

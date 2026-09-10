@@ -153,7 +153,7 @@ SDK build does not have. This module brings its own tests and runs them against 
 
 The live path needs `gnuradio-4.0/sdr/SoapySource.hpp`, which the blocks project installs only when
 it is configured with **`-DGR4_ENABLE_SDR=ON`** — the family defaults to OFF. Without it this module
-still configures and builds, and `adsb_print` offers `--file` alone; the configure says which of the
+still configures and builds, and `adsb` offers `--file` alone; the configure says which of the
 two you got.
 
 Two things about that family are worth knowing when you build against a stock SDK:
@@ -177,14 +177,14 @@ blocks out of tree. It runs the SDK's registration generator over the three head
 `GR_REGISTER_BLOCK` and produces:
 
 - `libGr4AdsbBlocksShared.so`, installed under `<prefix>/lib/gnuradio-4/plugins`, and
-- `libGr4AdsbBlocksStatic.a`, which `adsb_print` links.
+- `libGr4AdsbBlocksStatic.a`, which `adsb` links.
 
 Either form registers its blocks through the generated `<gnuradio-4.0/Gr4AdsbBlocks.hpp>`, whose
 `gr::blocklib::initGr4AdsbBlocks(registry)` a consumer calls explicitly. Explicit initialization is
 the contract: a shared library nothing references is not recorded in `DT_NEEDED` under the linker's
 default `--as-needed`, so relying on static initializers to register is not portable.
 
-`adsb_print` does not need any of that — it names every block type and uses `emplaceBlock<T>`, which
+`adsb` does not need any of that — it names every block type and uses `emplaceBlock<T>`, which
 is the direct, statically checked route. The registry matters for a consumer that builds a graph
 from a saved description or loads the shared object as a plugin.
 
@@ -200,7 +200,7 @@ Against a recorded capture — interleaved 16-bit I/Q, host byte order, which is
 recorders write:
 
 ```
-./build/app/adsb_print --file ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data --rate 2e6
+./build/app/adsb --file ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data --rate 2e6
 ```
 
 The file run is not paced: it reads as fast as the disk delivers, which is what you want for a
@@ -217,17 +217,17 @@ Start with the rate alone and let the device choose everything else — this is 
 to open a radio that is fussy about its parameter set:
 
 ```
-./build/app/adsb_print --device "driver=hackrf"        --rate 4e6
-./build/app/adsb_print --device "driver=uhd,type=b200" --rate 4e6
-./build/app/adsb_print --device "driver=sdrplay"       --rate 6e6
-./build/app/adsb_print --device "driver=rtlsdr"        --rate 2e6 --agc on
+./build/app/adsb --device "driver=hackrf"        --rate 4e6
+./build/app/adsb --device "driver=uhd,type=b200" --rate 4e6
+./build/app/adsb --device "driver=sdrplay"       --rate 6e6
+./build/app/adsb --device "driver=rtlsdr"        --rate 2e6 --agc on
 ```
 
 Then add bandwidth, and on devices with a real gain control the gain, once it streams:
 
 ```
-./build/app/adsb_print --device "driver=hackrf"  --rate 4e6 --bandwidth 5e6 --gain 40
-./build/app/adsb_print --device "driver=sdrplay" --rate 6e6 --bandwidth 6e6
+./build/app/adsb --device "driver=hackrf"  --rate 4e6 --bandwidth 5e6 --gain 40
+./build/app/adsb --device "driver=sdrplay" --rate 6e6 --bandwidth 6e6
 ```
 
 **`--gain`, `--bandwidth` and `--agc` are asked for only when you give them.** Left off, the device

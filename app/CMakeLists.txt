@@ -1,10 +1,10 @@
-add_executable(adsb_print adsb_print.cpp)
+add_executable(adsb adsb.cpp)
 
 # The application instantiates every block by type, so it needs the include paths rather than the registry. It links
 # the module's static block library anyway, because that is what makes the blocks resolvable by name too — see
 # `gr::blocklib::initGr4AdsbBlocks` in the generated <gnuradio-4.0/Gr4AdsbBlocks.hpp>.
 target_link_libraries(
-  adsb_print
+  adsb
   PRIVATE gr4adsb-digital
           gr4adsb-adsb
           Gr4AdsbBlocksStatic
@@ -19,17 +19,17 @@ target_link_libraries(
 # this build got.
 if(TARGET gnuradio4::gr-sdr)
   message(STATUS "gr4-adsb: the SDK exports gnuradio4::gr-sdr, building the live receive path")
-  target_compile_definitions(adsb_print PRIVATE GR4ADSB_HAVE_SOAPY)
-  target_link_libraries(adsb_print PRIVATE gnuradio4::gr-sdr)
+  target_compile_definitions(adsb PRIVATE GR4ADSB_HAVE_SOAPY)
+  target_link_libraries(adsb PRIVATE gnuradio4::gr-sdr)
 else()
   find_package(SoapySDR CONFIG QUIET)
   find_path(GR4ADSB_SDR_INCLUDE_DIR gnuradio-4.0/sdr/SoapySource.hpp)
 
   if(SoapySDR_FOUND AND GR4ADSB_SDR_INCLUDE_DIR)
     message(STATUS "gr4-adsb: the SDK exports no sdr target; SoapySDR and the sdr headers were found, building the live receive path by hand")
-    target_compile_definitions(adsb_print PRIVATE GR4ADSB_HAVE_SOAPY)
-    target_include_directories(adsb_print PRIVATE "${GR4ADSB_SDR_INCLUDE_DIR}")
-    target_link_libraries(adsb_print PRIVATE SoapySDR gnuradio4::gnuradio-algorithm)
+    target_compile_definitions(adsb PRIVATE GR4ADSB_HAVE_SOAPY)
+    target_include_directories(adsb PRIVATE "${GR4ADSB_SDR_INCLUDE_DIR}")
+    target_link_libraries(adsb PRIVATE SoapySDR gnuradio4::gnuradio-algorithm)
 
     # SoapySource.hpp includes <gnuradio-4.0/sdr/NamespaceCompatibility.hpp>, which the SDR family does not install
     # (fixed in gnuradio4-blocks #26). Until that reaches the SDK, supply exactly that one header from a build-tree
@@ -46,11 +46,11 @@ else()
         "}\n"
         "#endif\n")
       message(STATUS "gr4-adsb: the SDK does not install sdr/NamespaceCompatibility.hpp; supplying it from ${shim}")
-      target_include_directories(adsb_print PRIVATE "${shim}")
+      target_include_directories(adsb PRIVATE "${shim}")
     endif()
   else()
     message(STATUS "gr4-adsb: SoapySDR or the installed sdr headers were not found, building --file replay only")
   endif()
 endif()
 
-install(TARGETS adsb_print RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(TARGETS adsb RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
