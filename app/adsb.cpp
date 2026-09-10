@@ -91,7 +91,8 @@ struct Options {
 
     // Unset means the device is not asked for this setting. SoapySource applies every setting it holds when it opens
     // the device, and its own defaults are 10 dB of gain and 500 kHz of bandwidth, so a setting left off the command
-    // line must reach the block as an empty vector rather than as an absent key.
+    // line must reach the block as an empty vector rather than as an absent key. A device handed a combination it
+    // cannot serve can refuse the whole activation; an SDRplay does, with `Init() failed: sdrplay_api_Fail`.
     std::optional<double> gain{};      ///< dB of receive gain
     std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
     bool                  agc = false; ///< ask for the device's own automatic gain control
@@ -380,11 +381,8 @@ int main(int argc, char** argv) {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
 
-        // The rate and the frequency are asked for unconditionally; a gain or a bandwidth left off the command line
-        // arrives as an empty vector, which is how SoapySource is told not to set it. An absent key would instead
-        // leave the block's own defaults, 10 dB of gain and 500 kHz of bandwidth, to reach the radio. An SDRplay
-        // handed a combination it cannot serve refuses the whole activation with `Init() failed: sdrplay_api_Fail`.
-        // `gain_mode` is set only when AGC is asked for, because the block acts on it only when it is true.
+        // The rate and the frequency are asked for unconditionally. `gain_mode` is set only when AGC is asked for,
+        // because the block acts on it only when it is true.
         gr::property_map settings{
             {"device", driver},
             {"device_parameter", parameters},

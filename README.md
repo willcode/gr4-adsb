@@ -136,11 +136,9 @@ A file replay is not paced: it reads as fast as the disk delivers, so the printe
 stream positions rather than wall-clock times.
 
 **`--gain`, `--bandwidth` and `--agc` are asked for only when given.** Left off, the device keeps
-its own gain, its own bandwidth for the rate and its own gain mode. `SoapySource` applies every
-setting it holds when it opens the device, and its own defaults are 10 dB and 500 kHz, so a setting
-left off has to reach the block as an empty value rather than an absent one. The application prints
-at start what it asked the device for and what it left alone, so a run that fails to start says
-which was which.
+its own gain, its own bandwidth for the rate and its own gain mode. The application prints at start
+what it asked the device for and what it left alone, so a run that fails to start says which was
+which.
 
 **Leave `--gain` off on an SDRplay.** `--gain` is SoapySDR's overall gain, and the SDRplay driver
 (SoapySDRPlay3) has no such thing: it exposes two gain-reduction elements, `IFGR` (20 to 59 dB,
@@ -181,9 +179,8 @@ is the one belonging to the running executable, the build tree's for a binary in
 
 Requirements:
 
-- **GNU Radio 4** — core, library and blocks, installed into one prefix. The demo was built and
-  tested on 9 September 2026 against the `main` branch of each, with the pull requests this work
-  depends on applied; it also configures and runs against plain `main`.
+- **GNU Radio 4**, installed into one prefix. Built and tested against the `main` branches of GNU
+  Radio 4 core, library and blocks as of 9 September 2026.
 - **The SDR family**, for live devices. The blocks project installs
   `gnuradio-4.0/sdr/SoapySource.hpp` only when its SDR family is enabled, and that family is off by
   default. Without it this module still configures and builds, and `adsb` offers `--file` alone. The
