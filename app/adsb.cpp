@@ -9,6 +9,8 @@
 // a frame at the sub-sample phase its preamble sits on needs what an interpolation reads and a magnitude stream has
 // thrown away.
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -19,15 +21,19 @@
 #include <cstdio>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <optional>
 #include <print>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include <gnuradio-4.0/BlockRegistry.hpp>
 #include <gnuradio-4.0/Graph.hpp>
+#include <gnuradio-4.0/PluginLoader.hpp>
 #include <gnuradio-4.0/Scheduler.hpp>
 
 #include <gnuradio-4.0/basic/ConverterBlocks.hpp>
@@ -89,6 +95,9 @@ struct Options {
     std::optional<double> gain{};      ///< dB of receive gain
     std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
     bool                  agc = false; ///< ask for the device's own automatic gain control
+
+    bool        verbose = false; ///< before running, report this module's blocks as the block registry sees them
+    std::string pluginDir{};     ///< where that report looks for the plugin; `parse` fills in the default
 };
 
 void usage() {
@@ -104,6 +113,8 @@ void usage() {
     std::println(stderr, "  --phase-steps N  sub-sample offsets each candidate is re-tested at; 1 turns the fine step off (default 8)");
     std::println(stderr, "  --coarse-ratio R share of the threshold the integer-position test admits a candidate at, in (0, 1] (default 0.5)");
     std::println(stderr, "  --seconds N      stop after N seconds");
+    std::println(stderr, "  --verbose        load this module's plugin and list the blocks it registers, then run as usual");
+    std::println(stderr, "  --plugin-dir DIR where --verbose looks for the plugin (default: this build's own plugin directory)");
 }
 
 /// @brief @p text as a number, and nothing when it is not one in full — so "4e6x" is refused rather than read as 4e6.
@@ -144,6 +155,37 @@ void usage() {
     return {driver, rest};
 }
 
+/// @brief The directory the running executable is in, or nothing when that cannot be told.
+[[nodiscard]] std::optional<std::filesystem::path> executableDirectory(const char* argv0) {
+    std::error_code ec;
+    if (const std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", ec); !ec) {
+        return self.parent_path();
+    }
+    if (argv0 == nullptr) {
+        return std::nullopt;
+    }
+    const std::filesystem::path fromArgv = std::filesystem::weakly_canonical(argv0, ec);
+    return ec ? std::nullopt : std::optional<std::filesystem::path>(fromArgv.parent_path());
+}
+
+/// @brief The plugin directory that belongs to the copy of this application that is running.
+///
+/// There are two, and the build compiles both in: the one the build writes the shared block library into, and the one
+/// `cmake --install` puts a second copy of it in under the prefix. Which of them this process should read is settled
+/// by where the process itself is, because reading both would open two identical libraries and register the module's
+/// blocks twice. `--plugin-dir` overrides the choice, which is also the answer for an install whose prefix moved.
+[[nodiscard]] std::string defaultPluginDirectory(const char* argv0) {
+    const std::string_view                     build = GR4ADSB_BUILD_PLUGIN_DIR;
+    const std::optional<std::filesystem::path> here  = executableDirectory(argv0);
+    if (!build.empty() && here.has_value()) {
+        std::error_code ec;
+        if (std::filesystem::equivalent(*here, GR4ADSB_BUILD_APP_DIR, ec) && !ec) {
+            return std::string(build);
+        }
+    }
+    return std::string(GR4ADSB_INSTALL_PLUGIN_DIR);
+}
+
 /// @brief The command line, or nothing when it is not usable. Everything it refuses is reported here.
 [[nodiscard]] std::optional<Options> parse(int argc, char** argv) {
     Options options;
@@ -153,6 +195,10 @@ void usage() {
         const auto             text     = [&]() -> std::string_view { return hasValue ? std::string_view(argv[++i]) : std::string_view{}; };
         const auto             refuse   = [&arg](std::string_view what) { std::println(stderr, "adsb: {} needs {}", arg, what); };
 
+        if (arg == "--verbose") {
+            options.verbose = true;
+            continue;
+        }
         if (!hasValue && arg != "--help") {
             refuse("a value");
             return std::nullopt;
@@ -161,6 +207,8 @@ void usage() {
             options.device = std::string(text());
         } else if (arg == "--file") {
             options.file = std::string(text());
+        } else if (arg == "--plugin-dir") {
+            options.pluginDir = std::string(text());
         } else if (arg == "--agc") {
             const std::string_view value = text();
             if (value != "on" && value != "off") {
@@ -229,7 +277,55 @@ void usage() {
         std::println(stderr, "adsb: {} does not exist", options.file);
         return std::nullopt;
     }
+    if (options.pluginDir.empty()) {
+        options.pluginDir = defaultPluginDirectory(argc > 0 ? argv[0] : nullptr);
+    }
     return options;
+}
+
+/// @brief Load this module's plugin from @p directory and report what it put into the block registry.
+///
+/// This is the module's other face, and the report is the demonstration. The chain below is built with
+/// `emplaceBlock<T>`, which needs the block headers and nothing else, so no block of this module is registered when
+/// this runs: every key listed here came out of the shared library the loader opened. Those keys are what a consumer
+/// building a graph from a saved description would name its blocks by.
+///
+/// The loader is done with when the report is: a shared object that registers from its own static initializers is
+/// kept mapped for the life of the process, because the factories it entered point into its code.
+void reportPlugins(const std::string& directory) {
+    gr::BlockRegistry&       registry = gr::globalBlockRegistry();
+    std::vector<std::string> before   = registry.keys();
+    std::ranges::sort(before);
+
+    const std::array<std::string, 1UZ> paths{directory};
+    const gr::PluginLoader             loader(registry, gr::globalSchedulerRegistry(), paths);
+
+    std::println(stderr, "adsb: plugin directory {}", directory);
+    for (const gr::PluginLoader::BlockLibrary& library : loader.blockLibraries()) {
+        std::println(stderr, "adsb: loaded {} ({} registrations)", library.file, library.nBlockRegistrations);
+    }
+    for (const auto& plugin : loader.plugins()) {
+        std::println(stderr, "adsb: loaded plugin \"{}\" {} with {} blocks", plugin->metadata.plugin_name, plugin->metadata.plugin_version, plugin->availableBlocks().size());
+    }
+    for (const auto& [file, reason] : loader.failedPlugins()) {
+        std::println(stderr, "adsb: {} did not load: {}", file, reason);
+    }
+    for (const std::string& file : loader.skippedFiles()) {
+        std::println(stderr, "adsb: {} was not opened; its name only reads as a shared object", file);
+    }
+
+    std::vector<std::string> after = registry.keys();
+    std::ranges::sort(after);
+    std::vector<std::string> added;
+    std::ranges::set_difference(after, before, std::back_inserter(added));
+    if (added.empty()) {
+        std::println(stderr, "adsb: nothing in {} registered a block", directory);
+        return;
+    }
+    std::println(stderr, "adsb: the registry gained {} keys:", added.size());
+    for (const std::string& key : added) {
+        std::println(stderr, "adsb:   {}", key);
+    }
 }
 
 } // namespace
@@ -241,6 +337,10 @@ int main(int argc, char** argv) {
         return 2;
     }
     const Options& options = *parsed;
+
+    if (options.verbose) {
+        reportPlugins(options.pluginDir);
+    }
 
     gr::Graph flow;
     auto&     framer  = flow.emplaceBlock<gr4adsb::PpmFramer<std::complex<float>>>({

@@ -174,17 +174,24 @@ same mechanism core's `test_external/minimal_blocklib` uses, which is the suppor
 blocks out of tree. It runs the SDK's registration generator over the three headers that carry
 `GR_REGISTER_BLOCK` and produces:
 
-- `libGr4AdsbBlocksShared.so`, installed under `<prefix>/lib/gnuradio-4/plugins`, and
-- `libGr4AdsbBlocksStatic.a`, which `adsb` links.
+- `libGr4AdsbBlocksShared.so`, the loadable one, and
+- `libGr4AdsbBlocksStatic.a`, for a consumer that would rather link the blocks in than open them,
+
+both installed under `<prefix>/lib/gnuradio-4/plugins` — `lib64` on a distribution that puts
+libraries there, since it follows `CMAKE_INSTALL_LIBDIR`.
 
 Either form registers its blocks through the generated `<gnuradio-4.0/Gr4AdsbBlocks.hpp>`, whose
-`gr::blocklib::initGr4AdsbBlocks(registry)` a consumer calls explicitly. Explicit initialization is
-the contract: a shared library nothing references is not recorded in `DT_NEEDED` under the linker's
-default `--as-needed`, so relying on static initializers to register is not portable.
+`gr::blocklib::initGr4AdsbBlocks(registry)` a consumer that links it calls explicitly. Explicit
+initialization is the contract for a linked library: a shared library nothing references is not
+recorded in `DT_NEEDED` under the linker's default `--as-needed`, so relying on static initializers
+to register is not portable. A library that is *opened* rather than linked is the other case, and
+there the static initializers are exactly what run: `gr::PluginLoader` sees the registry entries
+appear as it loads the file, which is what `--verbose` reports.
 
-`adsb` does not need any of that — it names every block type and uses `emplaceBlock<T>`, which
-is the direct, statically checked route. The registry matters for a consumer that builds a graph
-from a saved description or loads the shared object as a plugin.
+`adsb` links neither. It names every block type and uses `emplaceBlock<T>`, which is the direct,
+statically checked route and all a program that knows its own chain needs. The registry is for a
+program that does not: one building a graph from a saved description, or loading the shared object
+as a plugin. `--verbose` is that program, here — see Running.
 
 **The plugin ABI is versioned and the loader demands an exact match**, so rebuild this module
 against whatever SDK it is going to be loaded into. It is `GR_PLUGIN_CURRENT_ABI_VERSION` in the
@@ -209,6 +216,38 @@ The file source reads on a thread of its own and takes the size of a read from w
 can carry, so the application sets that port to 64 ki samples and gives it a ring eight reads deep.
 That is the only tuning in the file path, and it is what keeps the reader running ahead of the
 framer instead of waiting on it.
+
+### `--verbose`: the blocks through the registry
+
+The chain the application builds names every block type, so nothing in it needs the registry. **With
+`--verbose` the run first shows the module's other face**: `gr::PluginLoader` opens the shared block
+library, whose registrations enter the process-wide `gr::BlockRegistry`, and the application prints
+the file it opened and the keys that appeared. Then it runs exactly as it would have.
+
+```
+$ ./build/app/adsb --verbose --file ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data --rate 2e6
+adsb: plugin directory .../gr4-adsb/build/blocks
+adsb: loaded .../gr4-adsb/build/blocks/libGr4AdsbBlocksShared.so (8 registrations)
+adsb: the registry gained 4 keys:
+adsb:   gr4adsb::AdsbPrinter
+adsb:   gr4adsb::ModeSDecode
+adsb:   gr4adsb::PpmFramer<complex<float32>>
+adsb:   gr4adsb::PpmFramer<float32>
+adsb: ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data at 2.000 MS/s, threshold 2, 8 phase steps at a coarse ratio of 0.5
+    2.767  DF17  AA1BAA  airpos  alt 3600 ft
+```
+
+Eight registrations for four keys: every block is entered under its type name and under its alias,
+and for these blocks the two spell the same string, so the second entry replaces the first. The four
+keys are what a graph loaded from a saved description would name. A file the loader could not use is
+reported with its reason, and one the scan declined to open is named rather than passed over.
+
+**`--plugin-dir` says where to look.** Its default is the directory belonging to the copy of the
+application that is running: the build tree's `blocks/` directory for a binary still in the build
+tree, and `<prefix>/lib/gnuradio-4/plugins` for an installed one, where `<prefix>` is the
+`CMAKE_INSTALL_PREFIX` the module was configured with and `lib` follows `CMAKE_INSTALL_LIBDIR`. An
+install that was moved after the fact, or a plugin directory belonging to something else, is what
+`--plugin-dir` is for.
 
 Start with the rate alone and let the device choose everything else — this is the form most likely
 to open a radio that is fussy about its parameter set:
@@ -308,10 +347,10 @@ is for. See the rate rule for what it buys and what it costs.
 
 Full command line: `--device`, `--file`, `--frequency` (default 1090e6), `--rate` (default 4e6),
 `--threshold` (default 2), `--phase-steps` (default 8), `--coarse-ratio` (default 0.5), `--seconds`,
-and the three optional device settings `--bandwidth`, `--gain` and `--agc on|off`, each left to the
-device when not given. Exit codes: 0 on a clean stop, 2 on a bad command line, 1 on a graph error,
-each with the reason on stderr. Sweep `--gain` if the counters printed at exit show nominations
-without admitted frames.
+`--verbose`, `--plugin-dir`, and the three optional device settings `--bandwidth`, `--gain` and
+`--agc on|off`, each left to the device when not given. Exit codes: 0 on a clean stop, 2 on a bad
+command line, 1 on a graph error, each with the reason on stderr. Sweep `--gain` if the counters
+printed at exit show nominations without admitted frames.
 
 On an SDK predating **gnuradio4-blocks #26**, `SoapySource` dropped a whole 8192-sample chunk
 whenever the graph below it stopped taking samples — about 2 ms of air at 4 MS/s, so lost frames.

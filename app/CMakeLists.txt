@@ -1,16 +1,32 @@
 add_executable(adsb adsb.cpp)
 
-# The application instantiates every block by type, so it needs the include paths rather than the registry. It links
-# the module's static block library anyway, because that is what makes the blocks resolvable by name too — see
-# `gr::blocklib::initGr4AdsbBlocks` in the generated <gnuradio-4.0/Gr4AdsbBlocks.hpp>.
+# The application names every block type and builds its chain with emplaceBlock<T>, so the block families' include
+# paths and the SDK are the whole of what it needs to run; it links neither form of the module's block library.
+# --verbose adds the other route: it opens the shared block library through gr::PluginLoader, which reaches the
+# process-wide block and scheduler registries, and those are defined in gnuradio-blocklib-core.
 target_link_libraries(
   adsb
   PRIVATE gr4adsb-digital
           gr4adsb-adsb
-          Gr4AdsbBlocksStatic
+          gnuradio4::gnuradio-blocklib-core
           gnuradio4::gr-basic
           gnuradio4::gr-fileio
           gnuradio-options)
+
+# Where --verbose looks when --plugin-dir does not say. The build writes the shared block library into the build tree
+# and the install puts a second copy under the prefix, so both paths are compiled in and the application picks the one
+# that belongs to the copy of it that is running — the executable's own directory is the test. An SDK that builds no
+# shared block library leaves the first empty, and the installed path is then the only candidate.
+if(TARGET Gr4AdsbBlocksShared)
+  set(GR4ADSB_BUILD_PLUGIN_DIR "$<TARGET_FILE_DIR:Gr4AdsbBlocksShared>")
+else()
+  set(GR4ADSB_BUILD_PLUGIN_DIR "")
+endif()
+target_compile_definitions(
+  adsb
+  PRIVATE "GR4ADSB_BUILD_APP_DIR=\"$<TARGET_FILE_DIR:adsb>\""
+          "GR4ADSB_BUILD_PLUGIN_DIR=\"${GR4ADSB_BUILD_PLUGIN_DIR}\""
+          "GR4ADSB_INSTALL_PLUGIN_DIR=\"${CMAKE_INSTALL_FULL_LIBDIR}/gnuradio-4/plugins\"")
 
 # The SDR family is optional in the SDK, and when it is there it reaches a consumer in one of two shapes. An SDK that
 # exports gnuradio4::gr-sdr carries the sdr include path, the algorithm headers SoapySource.hpp pulls in and SoapySDR
