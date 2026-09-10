@@ -17,7 +17,7 @@ option(GR4ADSB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
 # gnuradio4      core: Block, Graph, Scheduler, DataSet, the block registry
 # gnuradio4Library    the algorithm headers the SDR and file blocks pull in
-# gnuradio4Blocks     the upstream block families the application's chain uses
+# gnuradio4Blocks     the GNU Radio 4 block families the application's chain uses
 # GnuRadioBlockLib    gr_add_block_library, the registration generator this module registers through
 find_package(gnuradio4 CONFIG REQUIRED)
 find_package(gnuradio4Library CONFIG REQUIRED)
@@ -50,9 +50,9 @@ target_compile_options(
             # GCC 16 at -O3 reports `std::vector`'s own destructor, inlined out of a block's, as reading an
             # uninitialized `_M_start` — of a member that has a default member initializer and is always
             # constructed. It fires here on `PpmScanner::config.pulseSlots` once the block is large enough for the
-            # inliner to reach that far, on both instantiations of PpmFramer. The upstream projects carry the same
-            # suppression in cmake/CompilerWarnings.cmake, and for the same reason: it is not a warning about code
-            # that can be written differently.
+            # inliner to reach that far, on both instantiations of PpmFramer. GNU Radio 4 carries the same
+            # suppression in its own cmake/CompilerWarnings.cmake, for the same reason: it is not a warning about
+            # code that can be written differently.
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 

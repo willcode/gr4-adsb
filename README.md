@@ -16,19 +16,15 @@ an earlier frame from that address has given one.
 
 ## Target
 
-This demo is built against **GNU Radio 4 main plus the pull requests still expected to merge**, not
-against bare main. At the time of writing that is:
+The demo needs an installed GNU Radio 4 SDK: core, library and blocks in one prefix. The set it was
+built, tested and measured against, on 2026-09-09, was
 
-- **core** — main `2885898b` plus #35, #39, #44, #45, #47, #49; #35 is not merged separately, it
-  rides in as a commit inside #39
-- **library** — main `d2e91398`; nothing of ours is open against it
-- **blocks** — main `db8836c2` (which already carries #26 and #36, both merged upstream on
-  2026-09-09) plus #27, #31, #32, #34, #37, #38
+- **core** — `2885898b`, with pull requests #35, #39, #44, #45, #47 and #49 merged into it,
+- **library** — `d2e91398`, and
+- **blocks** — `db8836c2`, with pull requests #27, #31, #32, #34, #37 and #38 merged into it.
 
-The SDK it was built and tested against on 2026-09-09 was an integration of those branches — the
-`integration/expected-20260909b` branches of core and blocks, library at its main — not an upstream
-release. It also configures and runs against bare upstream main — the two places where that
-costs something are called out under Building and Running below.
+It also configures, builds and runs against the plain `main` of the three projects; the two places
+where an older SDK costs something are called out under Building and Running below.
 
 ## The chain
 
@@ -79,9 +75,11 @@ slot the argument is straightforward: a pulse spans more than one sample, so an 
 something to work with. On a synthetic burst through a front end exactly one slot wide, sampled at
 one sample a slot, it should buy nothing at all — that filter makes the samples the linear
 interpolation of the ideal slot values, and no interpolation recovers what a linear one already
-threw away. The upstream test measures exactly that: at one sample a slot the search lifts the worst
+threw away. That is what the measurement says: at one sample a slot the search lifts the worst
 preamble shape ratio from 1.000 to 1.353 against a threshold of 2 and admits the same offsets the
 integer test admits; at three samples a slot it lifts 2.600 to 3.470 and admits every offset.
+`qa_PpmFramer` here holds the one-sample-a-slot half of that comparison, over eight rendered
+offsets.
 
 **A real RTL-SDR is not that filter, and on its captures the search finds frames.** Replayed offline
 at 2 MS/s, threshold 2, the same two 15 s captures the RTL-SDR paragraph under Running tables, the
@@ -134,7 +132,7 @@ Options: `-DGR4ADSB_ENABLE_TESTING=OFF` skips the tests, `-DGR4ADSB_WARNINGS_AS_
 
 ### Building the SDK
 
-The three upstream projects install into one prefix in the order core, library, blocks, each
+The three GNU Radio 4 projects install into one prefix in the order core, library, blocks, each
 configured with **`-DENABLE_TESTING=OFF`** (their default is ON):
 
 ```
@@ -156,18 +154,18 @@ it is configured with **`-DGR4_ENABLE_SDR=ON`** — the family defaults to OFF. 
 still configures and builds, and `adsb` offers `--file` alone; the configure says which of the
 two you got.
 
-Two things about that family are worth knowing when you build against a stock SDK:
+Two things about that family are worth knowing:
 
-- The target SDK exports `gnuradio4::gr-sdr` (**gnuradio4-blocks #38**), and that one target carries
-  the sdr include path, the algorithm headers `SoapySource.hpp` pulls in and `SoapySDR` itself, so
-  `app/CMakeLists.txt` links it and nothing else. An SDK without #38 exports no target for this one
-  family, and the same file then finds the headers on the prefix and `SoapySDR` by hand; the
-  configure line says which of the two it took.
+- An SDK that exports `gnuradio4::gr-sdr` puts the sdr include path, the algorithm headers
+  `SoapySource.hpp` pulls in and `SoapySDR` itself on that one target, and `app/CMakeLists.txt` links
+  it and nothing else. An SDK that installs the sdr headers but exports no target for them leaves the
+  same file to find the headers on the prefix and `SoapySDR` by hand. The configure line says which of
+  the two it took.
 - `SoapySource.hpp` includes `gnuradio-4.0/sdr/NamespaceCompatibility.hpp`, which the family did not
-  install before **gnuradio4-blocks #26**. Only on an SDK predating that fix does the build tree
-  supply exactly that one header from a directory holding nothing else, leaving every other
-  `gnuradio-4.0` header to come from the prefix. The shim is gated on the file being absent, so on a
-  current SDK it does not fire and the configure says so.
+  install before **gnuradio4-blocks #26**. Only on an SDK predating that does the build tree supply
+  exactly that one header from a directory holding nothing else, leaving every other `gnuradio-4.0`
+  header to come from the prefix. The shim is gated on the file being absent, so on a newer SDK it
+  does not fire and the configure says so.
 
 ### The plugin
 
@@ -189,10 +187,9 @@ is the direct, statically checked route. The registry matters for a consumer tha
 from a saved description or loads the shared object as a plugin.
 
 **The plugin ABI is versioned and the loader demands an exact match**, so rebuild this module
-against whatever SDK it is going to be loaded into. On the target SDK above the ABI is **1**
-(`GR_PLUGIN_CURRENT_ABI_VERSION` in `Plugin.hpp`), the same as on bare upstream main; core #38, a
-draft that is not expected to merge, would take it to 2, and a plugin built against one of the two
-will not load into the other.
+against whatever SDK it is going to be loaded into. It is `GR_PLUGIN_CURRENT_ABI_VERSION` in the
+SDK's `Plugin.hpp`, and it is **1** on the SDK above; a plugin built against one value will not load
+into a core built with another.
 
 ## Running
 
@@ -204,14 +201,14 @@ recorders write:
 ```
 
 The file run is not paced: it reads as fast as the disk delivers, which is what you want for a
-capture and means the printed timestamps are stream positions rather than wall-clock times. (GNU
-Radio 4's `Throttle` would pace it, but upstream's version needs a tag-propagation policy that is
-not in an upstream release yet, so nothing here uses it.)
+capture and means the printed timestamps are stream positions rather than wall-clock times. GNU
+Radio 4's `Throttle` would hold it to the sample rate, which is what a live run wants and a replay
+does not, so the chain does not carry one.
 
-Only on an SDK predating **gnuradio4-blocks #27** does the file source size its reader chunk from an
-unconstrained output port, ask for more than any span can offer, and never start. The application
-bounds that port and gives it a ring several chunks deep regardless; with #27 the source sizes the
-chunk from the actual ring instead, and the bound is redundant but harmless.
+The file source reads on a thread of its own and takes the size of a read from what its output port
+can carry, so the application sets that port to 64 ki samples and gives it a ring eight reads deep.
+That is the only tuning in the file path, and it is what keeps the reader running ahead of the
+framer instead of waiting on it.
 
 Start with the rate alone and let the device choose everything else — this is the form most likely
 to open a radio that is fussy about its parameter set:
@@ -316,17 +313,17 @@ device when not given. Exit codes: 0 on a clean stop, 2 on a bad command line, 1
 each with the reason on stderr. Sweep `--gain` if the counters printed at exit show nominations
 without admitted frames.
 
-On an SDK predating **gnuradio4-blocks #26** (merged upstream on 2026-09-09), `SoapySource` dropped a
-whole 8192-sample chunk whenever the graph below it stopped taking samples — about 2 ms of air at
-4 MS/s, so lost frames. Nothing here works around it; on such an SDK it shows up as a lower frame
-rate than the band deserves.
+On an SDK predating **gnuradio4-blocks #26**, `SoapySource` dropped a whole 8192-sample chunk
+whenever the graph below it stopped taking samples — about 2 ms of air at 4 MS/s, so lost frames.
+Nothing here works around it; on such an SDK it shows up as a lower frame rate than the band
+deserves.
 
 ## What is carried, and from where
 
-Most of the chain is upstream GNU Radio 4 and is used as installed. What follows is carried into this
-repository because it is not in an upstream release. It comes from the willcode forks of GNU Radio 4 —
+Most of the chain is GNU Radio 4's own and is used as installed. What follows is carried into this
+repository because it is not in a GNU Radio 4 release. It comes from
 [gnuradio4-blocks](https://github.com/willcode/gnuradio4-blocks) and
-[gnuradio4-library](https://github.com/willcode/gnuradio4-library) — branch `rework`, blocks at
+[gnuradio4-library](https://github.com/willcode/gnuradio4-library), branch `rework`, blocks at
 `71a8d45c` and library at `e65a957`. Each row names the commit that last touched the file it was taken
 from, so a later sync can tell at a glance what has moved.
 
@@ -335,7 +332,7 @@ from, so a later sync can tell at a glance what has moved.
 | `blocks/digital/…/Crc.hpp` | library `algorithm/digital/Crc.hpp` — the parameterized CRC the Mode S parity is one instance of | `a5ca312` |
 | `blocks/digital/…/Ppm.hpp` | library `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant | `e65a957` |
 | `blocks/digital/…/sync/MmseInterpolator.hpp` | library `algorithm/sync/MmseInterpolator.hpp` — the tap bank the phase search interpolates with | `813f054` |
-| `blocks/digital/…/filter/FilterDesign.hpp` | library `algorithm/filter/FilterDesign.hpp` — carried whole for the one function the bank calls; not in an upstream release | `7a32d0e` |
+| `blocks/digital/…/filter/FilterDesign.hpp` | library `algorithm/filter/FilterDesign.hpp` — carried whole for the one function the bank calls; not in a GNU Radio 4 release | `7a32d0e` |
 | `blocks/digital/…/fourier/window.hpp` | library `algorithm/fourier/window.hpp` — the SDK installs an older one whose `window::Type` stops at Kaiser, and `FilterDesign.hpp` names Bartlett, Welch and Parzen | `a48ad14` |
 | `blocks/digital/…/PpmFramer.hpp` | blocks `blocks/digital/PpmFramer.hpp` — the block over that kernel | `71a8d45c` |
 | `blocks/adsb/…/ModeS.hpp` | blocks `blocks/adsb/ModeS.hpp` — the message layer | `9fd023db` |
@@ -343,14 +340,14 @@ from, so a later sync can tell at a glance what has moved.
 | `blocks/test/qa_PpmFramer.cpp` | blocks `blocks/digital/test/qa_PpmFramer.cpp` | `71a8d45c` |
 | `blocks/test/qa_ModeSDecode.cpp` | blocks `blocks/adsb/test/qa_ModeSDecode.cpp` | `9fd023db` |
 | `blocks/test/qa_AdsbPrinter.cpp` | blocks `blocks/adsb/test/qa_AdsbPrinter.cpp` | `23fb32f4` |
-| `blocks/test/TestSpans.hpp` | blocks `blocks/digital/test/TestSpans.hpp` — the span pair alone; the fork's file also carries graph-driving helpers no test here uses | `ca84b8f4` |
+| `blocks/test/TestSpans.hpp` | blocks `blocks/digital/test/TestSpans.hpp` — the span pair alone; the file it came from also carries graph-driving helpers no test here uses | `ca84b8f4` |
 
-They keep their contract comments and their tests. Everything was renamed out of the fork's
-namespaces into `gr4adsb`, and the include path is `gr4adsb/…`, so nothing here collides with an
-installed GNU Radio. The three interpolation headers keep the fork's own sub-namespaces under that
-name — `gr4adsb::sync`, `gr4adsb::filter::design` and `gr4adsb::algorithm::window` — so they sit
-beside the SDK's copies of the same code rather than over them, which is what lets `window.hpp` be
-carried at all. If these blocks are upstreamed, this module shrinks to the application.
+They keep their contract comments and their tests. Everything was renamed into the `gr4adsb`
+namespace, and the include path is `gr4adsb/…`, so nothing here collides with an installed GNU
+Radio. The three interpolation headers keep their own sub-namespaces under that name —
+`gr4adsb::sync`, `gr4adsb::filter::design` and `gr4adsb::algorithm::window` — so they sit beside the
+SDK's copies of the same code rather than over them, which is what lets `window.hpp` be carried at
+all. If these blocks land in GNU Radio 4 itself, this module shrinks to the application.
 
 ## Next
 

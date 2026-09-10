@@ -3,9 +3,11 @@
 // Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
 // File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
 //
-// Everything above the framer is upstream GNU Radio 4; the framer, the decoder and the renderer are this module's
-// blocks. The framer takes the complex samples themselves rather than their magnitudes, because deciding a frame at
-// the sub-sample phase its preamble sits on needs what an interpolation reads and a magnitude stream has thrown away.
+// SoapySource, BasicFileSource and InterleavedToComplex are GNU Radio 4's own blocks, used as installed; PpmFramer,
+// ModeSDecode and AdsbPrinter are this module's, and ConsoleSink is defined below because it is the only piece that
+// assumes a terminal. The framer takes the complex samples themselves rather than their magnitudes, because deciding
+// a frame at the sub-sample phase its preamble sits on needs what an interpolation reads and a magnitude stream has
+// thrown away.
 
 #include <atomic>
 #include <chrono>
@@ -260,13 +262,12 @@ int main(int argc, char** argv) {
         // the file reads — nothing paces it.
         auto& source = flow.emplaceBlock<gr::blocks::fileio::BasicFileSource<std::int16_t>>({{"file_name", options.file}});
 
-        // Upstream's file source sizes its asynchronous reader's chunk as `out.max_buffer_size() * sizeof(T)`, and
-        // an unconstrained port reports SIZE_MAX, which that multiplication overflows to SIZE_MAX - 1. The reader
-        // then asks for more than any span can offer on every poll, publishes nothing and returns
-        // INSUFFICIENT_OUTPUT_ITEMS forever, so the graph never starts — the header's own note on `chunkBytes`
-        // predicts exactly this. Bounding the port makes the chunk a real number, and a ring several chunks deep
-        // keeps a whole chunk free most of the time; when it is not, the block simply waits for the reader to drain,
-        // which is ordinary backpressure. Unconditional and harmless once gnuradio4-blocks #27 lands.
+        // The file source fills its output from a reader thread, one read at a time, and it takes the size of a
+        // read from what its output port says it can carry. So the application sets both numbers: 64 ki samples
+        // is the bound on the port and therefore the size of a read, and a ring eight reads deep keeps a whole
+        // read's worth of room free most of the time. When it is not free the reader waits for the graph to
+        // drain it, which is ordinary backpressure. Leaving the port unbounded is the case to avoid: it reports
+        // SIZE_MAX samples, and no read of that size can be published.
         constexpr std::size_t kReaderChunk = 1UZ << 16U;
         source.out.max_samples             = kReaderChunk;
         if (!source.out.resizeBuffer(8UZ * kReaderChunk).has_value()) {
