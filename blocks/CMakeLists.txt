@@ -6,8 +6,8 @@ add_subdirectory(adsb)
 # <gnuradio-4.0/Gr4AdsbBlocks.hpp> with the gr::blocklib::initGr4AdsbBlocks() initializer the application calls.
 #
 # MAKE_SHARED_LIBRARY produces the loadable plugin, installed under lib/gnuradio-4/plugins; MAKE_STATIC_LIBRARY
-# produces the archive the application links. Only headers that carry GR_REGISTER_BLOCK belong in HEADERS — the two
-# kernel headers under digital/ define no block and are pulled in by PpmFramer.hpp.
+# produces the archive the application links. Only headers that carry GR_REGISTER_BLOCK belong in HEADERS — the
+# kernel headers under digital/, sync/, filter/ and fourier/ define no block and are pulled in by PpmFramer.hpp.
 gr_add_block_library(
   Gr4AdsbBlocks
   MAKE_SHARED_LIBRARY

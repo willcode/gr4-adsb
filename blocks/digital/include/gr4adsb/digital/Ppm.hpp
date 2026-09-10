@@ -2,15 +2,20 @@
 #define GR4ADSB_PPM_HPP
 
 #include <algorithm>
+#include <bit>
+#include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <format>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <gr4adsb/digital/Crc.hpp>
+#include <gr4adsb/sync/MmseInterpolator.hpp>
 
 /**
  * @brief Pulse-position framing: a burst read out of magnitude samples with no clock and no carrier to acquire.
@@ -31,6 +36,15 @@
  * it was given and returns how many samples it is done with; the caller presents the remainder again, prefixed to
  * whatever arrived next. Nothing here allocates after `prepare()` except the slot-sum scratch, which grows once to
  * the largest span it has been shown.
+ *
+ * A position is an integer sample index, but a burst does not arrive on the sample clock: a pulse straddling two
+ * samples splits its energy over both, and at one sample a slot the half that lands in the neighboring gap slot is
+ * the very quantity the shape test measures the pulses against. The scanner therefore takes the complex samples as
+ * well, when a caller has them, and decides each position at the sub-sample offset its preamble actually sits on —
+ * a cheap test at integer positions to find candidates, then a search over `phaseSteps` offsets spanning one
+ * sample, on magnitudes interpolated by `gr4adsb::sync::MmseInterpolatorBank`. The offset that wins decides the bits too,
+ * and travels on the frame as `phase`. With no samples, or with `phaseSteps` at one, every decision is the integer
+ * one and nothing is interpolated.
  *
  * The parity is checked here rather than downstream because the remainder decides containment: an admitted frame
  * hides the positions inside it, and only a frame the parity vouches for may do that. The remainder travels on
@@ -152,8 +166,9 @@ struct PpmFrame {
     std::size_t                   bits      = 0UZ;  ///< the frame's length in bits, one of the config's two
     std::uint32_t                 format    = 0U;   ///< the leading `formatBits` bits, as a number
     std::uint64_t                 remainder = 0ULL; ///< the whole frame's remainder: zero when admitted, the address when the parity was XOR'd with one
-    float                         strong    = 0.F;  ///< the least pulse-slot mean
-    float                         weak      = 0.F;  ///< the greatest gap-slot mean
+    float                         strong    = 0.F;  ///< the least pulse-slot mean, at the offset the decision was made at
+    float                         weak      = 0.F;  ///< the greatest gap-slot mean, at the same offset
+    float                         phase     = 0.F;  ///< sub-sample timing in samples from `position`, in [-0.5, 0.5); zero when the decision was an integer one
     std::size_t                   position  = 0UZ;  ///< absolute sample index of the nominated position, the preamble's first sample
     PpmOutcome                    outcome   = PpmOutcome::Admitted;
 
@@ -166,6 +181,9 @@ struct PpmCounters {
     std::uint64_t admitted    = 0ULL;
     std::uint64_t crcFailed   = 0ULL;
     std::uint64_t shortFormat = 0ULL;
+    /// @brief Positions the coarse test passed, of which the nominations are the ones the sub-sample search then
+    /// carried to the full threshold; at least `nominations`, and equal to it when no search runs.
+    std::uint64_t candidates = 0ULL;
 };
 
 /**
@@ -182,6 +200,23 @@ struct PpmCounters {
  * position inside it is nominated; every other nomination advances the search by one sample. That asymmetry is
  * what the parity buys, and it is the reason a false nomination one sample before a real preamble cannot swallow
  * the real frame.
+ *
+ * Given the complex samples the magnitudes were taken from, the decision splits in two. The integer test runs at
+ * `threshold * coarseRatio` and only selects candidates; each candidate is then measured again at every one of
+ * `phaseSteps` offsets spanning one sample, on magnitudes interpolated from the complex samples, and the offset
+ * with the greatest ratio has to reach the full `threshold` for the position to be a nomination. Splitting it this
+ * way is what makes the search affordable: the coarse test is the same handful of comparisons per position it
+ * always was, and the interpolation runs only where a preamble might be. The relaxed coarse threshold is what a
+ * badly timed preamble needs to survive to the search, because half a pulse landing in a gap slot both lowers the
+ * pulses and raises the gaps.
+ *
+ * An even `phaseSteps` puts a zero offset in the set, and an interpolation at zero is a unit impulse, so one of the
+ * offsets tried reproduces the integer decision exactly. The search therefore never reports a smaller ratio than
+ * the integer test would have, and never refuses a position the integer test at the same `threshold` would have
+ * taken. What it buys is bounded by how much of the burst survives the sample rate: a pulse one slot wide at one
+ * sample a slot is an impulse, its spectrum reaches past Nyquist, and no interpolation recovers the peak a straddled
+ * pulse split in two — the ratio rises but not to what good timing gives. Two slots of pulse per sample, which is
+ * what three samples a slot gives, is where the search recovers the whole of it.
  */
 struct PpmScanner {
     PpmConfig   config{};
@@ -190,6 +225,17 @@ struct PpmScanner {
     /// @brief The nomination ratio: a position passes when its least pulse slot is at least this many times its greatest gap.
     float threshold = 2.0F;
 
+    /**
+     * @brief Sub-sample offsets the search tries, `tau_k = -0.5 + k / phaseSteps` samples for `k < phaseSteps`.
+     *
+     * One turns the search off and leaves every decision at integer positions. Read by `prepare()` to size the
+     * interpolator's grid, so it is set before the scanner is prepared and not between calls.
+     */
+    std::size_t phaseSteps = 8UZ;
+
+    /// @brief The integer test's share of `threshold`, in (0, 1]: a position below `threshold * coarseRatio` there is not a candidate.
+    float coarseRatio = 0.5F;
+
     std::size_t _slot   = 1UZ; ///< samples per half-bit-period slot
     std::size_t _offset = 0UZ; ///< the absolute input index of the next span's first sample
 
@@ -197,6 +243,42 @@ struct PpmScanner {
     std::vector<std::size_t>  _gapOffsets{};   ///< the remaining preamble slots, likewise
     std::vector<std::uint8_t> _octets{};       ///< the frame being read, sized once to the long length
     std::vector<float>        _sums{};         ///< one slot-wide sum per input index, used only above one sample per slot
+
+    /// @brief One offset the search tries, with the two numbers that read it out of the bank.
+    struct PhaseOffset {
+        float       tau  = 0.F; ///< the shift in samples, in [-0.5, 0.5)
+        std::size_t row  = 0UZ; ///< the bank row `tau`'s fraction selects
+        std::size_t lead = 3UZ; ///< samples between the eight-tap window's first and the instant it lands on: three at or above zero, four below
+    };
+
+    std::vector<PhaseOffset> _phases{};   ///< the offsets, built by `prepare()`; empty when the search is off
+    std::vector<float>       _halfSums{}; ///< one interpolated half-bit-period sum per half bit, sized once to the long frame
+
+    /// @brief Taps the interpolation uses. The window straddles the instant, so eight of them read four samples on either side.
+    static constexpr int kInterpolatorTaps = 8;
+
+    /// @brief Samples an eight-tap interpolation reads outside the sample it lands on, on either side.
+    static constexpr std::size_t kInterpolatorGuard = 4UZ;
+
+    /// @brief The coarsest `mu` grid the bank is built on, whatever `phaseSteps` asks for.
+    static constexpr std::size_t kMinimumBankSteps = 8UZ;
+
+    /**
+     * @brief The interpolator's one-sided design band, as a fraction of the sample rate.
+     *
+     * A one-slot pulse through a front end about as wide as the slot rate fills the whole Nyquist band and reaches
+     * past it, so the band is chosen for the shape ratio the search delivers rather than for the smallest
+     * reconstruction error. The two disagree here: a narrow fit wins on error energy by attenuating what it cannot
+     * reproduce, and the shape test wants the contrast instead. Measured on the renderer `qa_Ppm` carries, over the
+     * worst of eight sub-sample offsets on a Mode S burst, the ratio the search finds is 1.353 at one sample a slot
+     * and 3.470 at three, against 1.195 and 3.105 at a band of 0.25; half a sample of delay costs 0.466 of the
+     * waveform's own root-mean-square here against 0.288 there. A band nearer one half buys under three percent
+     * more and conditions the tap solve worse.
+     */
+    static constexpr double kInterpolatorBand = 0.45;
+
+    /// @brief The tap bank the search interpolates with, rebuilt by `prepare()` on a grid of `phaseSteps` rounded up.
+    gr4adsb::sync::MmseInterpolatorBank _bank{kInterpolatorTaps, static_cast<int>(kMinimumBankSteps), kInterpolatorBand, false};
 
     /// @brief The parity register, rebuilt by `prepare()` from the config's six-tuple.
     Crc _crc{24U, 0xFFF409ULL, 0ULL, 0ULL, false, false};
@@ -218,6 +300,22 @@ struct PpmScanner {
         }
         _octets.assign(config.longBits / 8UZ, std::uint8_t{0});
         _sums.clear();
+
+        // the grid the search quantizes to is the search itself when phaseSteps is a power of two, so every offset
+        // lands on a row and the only timing error left is the offset spacing
+        const auto steps = static_cast<int>(std::max(kMinimumBankSteps, std::bit_ceil(std::max(phaseSteps, 1UZ))));
+        _bank            = gr4adsb::sync::MmseInterpolatorBank(kInterpolatorTaps, steps, kInterpolatorBand, false);
+        _phases.clear();
+        if (phaseSteps > 1UZ) {
+            _phases.reserve(phaseSteps);
+            for (std::size_t k = 0UZ; k < phaseSteps; ++k) {
+                const double tau = -0.5 + static_cast<double>(k) / static_cast<double>(phaseSteps);
+                // an offset below zero lands between the window's third and fourth taps of the sample before it
+                _phases.push_back({static_cast<float>(tau), _bank.row(tau < 0.0 ? tau + 1.0 : tau), tau < 0.0 ? kInterpolatorGuard : kInterpolatorGuard - 1UZ});
+            }
+        }
+        _halfSums.assign(2UZ * config.longBits, 0.F);
+
         _crc     = Crc(config.crcWidth, config.crcPoly, config.crcInit, config.crcFinalXor, config.crcInputReflected, config.crcResultReflected);
         counters = PpmCounters{};
         reset();
@@ -236,6 +334,18 @@ struct PpmScanner {
     /// @brief The samples one candidate needs before it can be decided: the preamble plus the longest frame.
     [[nodiscard]] std::size_t windowSamples() const noexcept { return (config.preambleSlots + 2UZ * config.longBits) * _slot; }
 
+    /// @brief Samples the search reads outside a candidate's window, on either side: four, or none when `prepare()` built no offsets.
+    [[nodiscard]] std::size_t guardSamples() const noexcept { return _phases.empty() ? 0UZ : kInterpolatorGuard; }
+
+    /**
+     * @brief The samples one candidate needs when complex samples decide it: the window plus a guard at either end.
+     *
+     * This is the span a caller of the three-argument `consume()` sizes its buffer and its slices by, as
+     * `windowSamples()` is for the two-argument one: a span of `phasedWindowSamples() - 1 + k` samples holds
+     * exactly `k` decidable positions either way.
+     */
+    [[nodiscard]] std::size_t phasedWindowSamples() const noexcept { return windowSamples() + 2UZ * guardSamples(); }
+
     /**
      * @brief Decides every position whose whole window lies inside @p magnitudes, reporting each nomination to @p onFrame.
      *
@@ -246,11 +356,37 @@ struct PpmScanner {
      */
     template<typename Sink>
     [[nodiscard]] std::size_t consume(std::span<const float> magnitudes, Sink&& onFrame) {
+        return consume(magnitudes, std::span<const std::complex<float>>{}, std::forward<Sink>(onFrame));
+    }
+
+    /**
+     * @brief The same decision, made at the sub-sample offset each candidate's preamble sits on.
+     *
+     * @param magnitudes as above.
+     * @param samples the complex samples @p magnitudes was taken from, index-aligned with it and at least as long,
+     *        or empty to decide at integer positions alone.
+     * @param onFrame as above; every reported frame carries the offset it was decided at as `phase`.
+     * @return how many leading samples the scanner is done with, which is `guardSamples()` fewer than the positions
+     *         it decided when a search ran: those samples are the next candidate's leading guard and are shown again.
+     * @throws std::invalid_argument when @p samples is shorter than @p magnitudes, which would misalign the two.
+     *
+     * The first `guardSamples()` positions of a stream are not decided, their interpolation reaching before its
+     * first sample. Everything else is as the two-argument call: a position is decided exactly once, reads a fixed
+     * window, and the result does not depend on how the input was chunked.
+     */
+    template<typename Sink>
+    [[nodiscard]] std::size_t consume(std::span<const float> magnitudes, std::span<const std::complex<float>> samples, Sink&& onFrame) {
         if (!configured()) {
             return 0UZ;
         }
+        // the offsets are what `prepare()` built, so the geometry `guardSamples()` states and the one used here agree
+        const bool search = !_phases.empty() && !samples.empty();
+        if (search && samples.size() < magnitudes.size()) {
+            throw std::invalid_argument(std::format("gr4adsb::PpmScanner::consume: samples is index-aligned with magnitudes and must be at least as long, got {} against {}", samples.size(), magnitudes.size()));
+        }
         const std::size_t window = windowSamples();
-        if (magnitudes.size() < window) {
+        const std::size_t guard  = search ? kInterpolatorGuard : 0UZ;
+        if (magnitudes.size() < window + 2UZ * guard) {
             return 0UZ;
         }
 
@@ -274,8 +410,11 @@ struct PpmScanner {
 
         const std::size_t dataBase = config.preambleSlots * _slot;
         const auto        slotSpan = static_cast<float>(_slot);
-        std::size_t       position = 0UZ;
-        while (position + window <= magnitudes.size()) {
+        // without a search the coarse test is the whole test, and the position it passes is a nomination outright
+        const float       coarse   = search ? threshold * coarseRatio : threshold;
+        const std::size_t last     = magnitudes.size() - window - guard;
+        std::size_t       position = guard;
+        while (position <= last) {
             float strong = std::numeric_limits<float>::max();
             for (const std::size_t offset : _pulseOffsets) {
                 strong = std::min(strong, sums[position + offset]);
@@ -284,25 +423,68 @@ struct PpmScanner {
             for (const std::size_t offset : _gapOffsets) {
                 weak = std::max(weak, sums[position + offset]);
             }
-            if (strong <= 0.F || strong < threshold * weak) {
+            if (strong <= 0.F || strong < coarse * weak) {
                 ++position;
                 continue;
             }
+            ++counters.candidates;
 
-            const float*  data   = sums + position + dataBase;
+            PhaseOffset chosen{};
+            if (search) {
+                float best = -1.F;
+                for (const PhaseOffset& offset : _phases) {
+                    float pulse = std::numeric_limits<float>::max();
+                    for (const std::size_t slot : _pulseOffsets) {
+                        pulse = std::min(pulse, slotSumAt(samples, position + slot, offset));
+                    }
+                    float gap = 0.F;
+                    for (const std::size_t slot : _gapOffsets) {
+                        gap = std::max(gap, slotSumAt(samples, position + slot, offset));
+                    }
+                    // an empty gap is the best a shape can be, and dividing by it would say nothing about which offset won
+                    const float ratio = pulse <= 0.F ? 0.F : (gap <= 0.F ? std::numeric_limits<float>::max() : pulse / gap);
+                    if (ratio > best) {
+                        best   = ratio;
+                        chosen = offset;
+                        strong = pulse;
+                        weak   = gap;
+                    }
+                }
+                if (best < threshold) {
+                    ++position;
+                    continue;
+                }
+            }
+
+            // the half-bit-period sums the format and then the frame are read from: the integer slot sums, or the
+            // interpolated ones at the offset that won, filled as far as the length rule turns out to need
+            std::size_t filled = 0UZ;
+            const auto  fillTo = [&](std::size_t upTo) {
+                for (; filled < upTo; ++filled) {
+                    _halfSums[filled] = slotSumAt(samples, position + dataBase + filled * _slot, chosen);
+                }
+            };
+            const auto half = [&](std::size_t index) -> float { return search ? _halfSums[index] : sums[position + dataBase + index * _slot]; };
+
+            if (search) {
+                fillTo(2UZ * config.formatBits);
+            }
             std::uint32_t format = 0U;
             for (std::size_t bit = 0UZ; bit < config.formatBits; ++bit) {
-                const bool one = data[2UZ * bit * _slot] > data[(2UZ * bit + 1UZ) * _slot];
+                const bool one = half(2UZ * bit) > half(2UZ * bit + 1UZ);
                 format         = (format << 1U) | (one ? 1U : 0U);
             }
             const bool        isLong = (format >> (config.formatBits - 1UZ)) != 0U;
             const std::size_t bits   = isLong ? config.longBits : config.shortBits;
+            if (search) {
+                fillTo(2UZ * bits);
+            }
 
             const std::size_t             octets = bits / 8UZ;
             const std::span<std::uint8_t> frame(_octets.data(), octets);
             std::ranges::fill(frame, std::uint8_t{0});
             for (std::size_t bit = 0UZ; bit < bits; ++bit) {
-                if (data[2UZ * bit * _slot] > data[(2UZ * bit + 1UZ) * _slot]) {
+                if (half(2UZ * bit) > half(2UZ * bit + 1UZ)) {
                     frame[bit / 8UZ] = static_cast<std::uint8_t>(frame[bit / 8UZ] | (0x80U >> (bit % 8UZ)));
                 }
             }
@@ -314,6 +496,7 @@ struct PpmScanner {
                 .remainder                       = remainder, //
                 .strong                          = strong / slotSpan,
                 .weak                            = weak / slotSpan,
+                .phase                           = chosen.tau,
                 .position                        = _offset + position, //
                 .outcome                         = isLong ? (remainder == 0ULL ? PpmOutcome::Admitted : PpmOutcome::CrcFailed) : PpmOutcome::ShortFormat};
 
@@ -329,8 +512,26 @@ struct PpmScanner {
             position += reported.admitted() ? window : 1UZ;
         }
 
-        _offset += position;
-        return position;
+        // the guard the next candidate reads before itself has not been decided about, so it is not consumed
+        const std::size_t consumed = position - guard;
+        _offset += consumed;
+        return consumed;
+    }
+
+    /**
+     * @brief One slot's strength at an offset: `sum over j < samplesPerSlot of |x(first + j + tau)|`.
+     *
+     * `x` is @p samples interpolated by the bank, so this is the magnitude of a band-limited estimate of the signal
+     * and not an interpolation of the magnitudes, which is a different and worse quantity. The window starts
+     * `at.lead` samples before the instant, which is why @p first is never below `kInterpolatorGuard`.
+     */
+    [[nodiscard]] float slotSumAt(std::span<const std::complex<float>> samples, std::size_t first, const PhaseOffset& at) const noexcept {
+        const std::complex<float>* window = samples.data() + first - at.lead;
+        float                      total  = 0.F;
+        for (std::size_t j = 0UZ; j < _slot; ++j) {
+            total += std::abs(_bank.interpolate<std::complex<float>>(window + j, at.row));
+        }
+        return total;
     }
 
     /**

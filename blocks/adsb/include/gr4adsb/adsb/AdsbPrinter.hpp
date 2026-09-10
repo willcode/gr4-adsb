@@ -56,7 +56,9 @@ The identifications are remembered per address in a table of `table_size` entrie
 giving way when it is full. That memory is the only state here: a line is otherwise a function of one record.
 
 `protocol` is `text/adsb` — a rendered line, from ADS-B — and every key of the input record crosses beneath it, so a
-consumer can still filter on the address or the altitude it was rendered from.
+consumer can still filter on the address or the altitude it was rendered from. The reserved `source_id` is not
+written: the vocabulary gives that key to the receiver, as the operator's name for it, and a producer claiming it
+would displace what the receiver has to say.
 */
 struct AdsbPrinter : Block<AdsbPrinter> {
     using Description = Doc<R""(

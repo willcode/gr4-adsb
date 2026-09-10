@@ -34,9 +34,9 @@
  * RTCA DO-260B, whose ME field occupies bits 33 to 88 of a long frame.
  *
  * The decoded fields are metadata and the payload stays the octets, so nothing the frame said is lost and a consumer
- * that speaks the protocol reads the same record as one that does not. Every value is a scalar — an integer, a
- * double, a bool or a string — because a metadata map that crosses a process is a wire format, and a sequence does
- * not survive one.
+ * that speaks the protocol reads the same record as one that does not. Every value is a scalar of the record-metadata
+ * vocabulary's transportable types — an integer, a double, a bool or a string — because a metadata map that crosses a
+ * process is a wire format, and a sequence does not survive one.
  *
  * Bit numbering follows the standard: bit 1 is the most significant bit of the first octet.
  */

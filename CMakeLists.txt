@@ -47,6 +47,13 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-dangling-reference>
             $<$<CXX_COMPILER_ID:GNU>:-Wno-interference-size>
             $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
+            # GCC 16 at -O3 reports `std::vector`'s own destructor, inlined out of a block's, as reading an
+            # uninitialized `_M_start` — of a member that has a default member initializer and is always
+            # constructed. It fires here on `PpmScanner::config.pulseSlots` once the block is large enough for the
+            # inliner to reach that far, on both instantiations of PpmFramer. The upstream projects carry the same
+            # suppression in cmake/CompilerWarnings.cmake, and for the same reason: it is not a warning about code
+            # that can be written differently.
+            $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
 if(GR4ADSB_ENABLE_TESTING)
