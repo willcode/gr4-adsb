@@ -14,8 +14,8 @@
 #include <utility>
 #include <vector>
 
-#include <gr4adsb/digital/Crc.hpp>
-#include <gr4adsb/sync/MmseInterpolator.hpp>
+#include <gr4adsb/algorithm/digital/Crc.hpp>
+#include <gr4adsb/algorithm/sync/MmseInterpolator.hpp>
 
 /**
  * @brief Pulse-position framing: a burst read out of magnitude samples with no clock and no carrier to acquire.

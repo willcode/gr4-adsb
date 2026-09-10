@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include <gr4adsb/fourier/window.hpp>
+#include <gr4adsb/algorithm/fourier/window.hpp>
 
 /**
  * @brief Windowed-sinc FIR design, and measurement of what a design delivers.

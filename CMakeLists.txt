@@ -61,5 +61,8 @@ if(GR4ADSB_ENABLE_TESTING)
   enable_testing()
 endif()
 
+# lib/ holds the code that is not a block: algorithm headers that would live in gnuradio4-library. blocks/ holds the
+# blocks themselves, and app/ the application that runs them.
+add_subdirectory(lib)
 add_subdirectory(blocks)
 add_subdirectory(app)

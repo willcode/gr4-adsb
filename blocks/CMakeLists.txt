@@ -8,8 +8,8 @@ add_subdirectory(adsb)
 #
 # MAKE_SHARED_LIBRARY produces the shared library a plugin loader opens; MAKE_STATIC_LIBRARY produces the archive a
 # consumer can link instead. Both are installed under lib/gnuradio-4/plugins. Only headers that carry
-# GR_REGISTER_BLOCK belong in HEADERS: the kernel headers under digital/, sync/, filter/ and fourier/ define no block
-# and are pulled in by PpmFramer.hpp.
+# GR_REGISTER_BLOCK belong in HEADERS: the algorithm headers in lib/ define no block and are pulled in by
+# PpmFramer.hpp.
 gr_add_block_library(
   Gr4AdsbBlocks
   MAKE_SHARED_LIBRARY

@@ -358,13 +358,23 @@ repository because it is not in a GNU Radio 4 release. It comes from
 `71a8d45c` and library at `e65a957`. Each row names the commit that last touched the file it was taken
 from, so a later sync can tell at a glance what has moved.
 
+**`lib/` and `blocks/` divide the module the way GNU Radio 4 divides itself.** `lib/` holds the code
+that is not a block: the framing scanner, the parameterized CRC, the interpolator, and the filter
+design and window that build its tap bank. Each of those came from gnuradio4-library, and each sits
+under `lib/include/gr4adsb/algorithm/` at the path it would take there, so a reader can see where it
+would be added. `blocks/` holds the three blocks, which came from gnuradio4-blocks. The test for
+which side a file belongs on is whether it came from the common library or would be added to it.
+`ModeS.hpp` stays whole in `blocks/` although it carries a Mode S decoding kernel in its own
+`detail` namespace beside the block: it came from the blocks family, and the kernel decodes exactly
+the message the block publishes.
+
 | Carried into | Taken from | Commit |
 |---|---|---|
-| `blocks/digital/…/Crc.hpp` | library `algorithm/digital/Crc.hpp` — the parameterized CRC the Mode S parity is one instance of | `a5ca312` |
-| `blocks/digital/…/Ppm.hpp` | library `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant | `e65a957` |
-| `blocks/digital/…/sync/MmseInterpolator.hpp` | library `algorithm/sync/MmseInterpolator.hpp` — the tap bank the phase search interpolates with | `813f054` |
-| `blocks/digital/…/filter/FilterDesign.hpp` | library `algorithm/filter/FilterDesign.hpp` — carried whole for the one function the bank calls; not in a GNU Radio 4 release | `7a32d0e` |
-| `blocks/digital/…/fourier/window.hpp` | library `algorithm/fourier/window.hpp` — the SDK installs an older one whose `window::Type` stops at Kaiser, and `FilterDesign.hpp` names Bartlett, Welch and Parzen | `a48ad14` |
+| `lib/…/algorithm/digital/Crc.hpp` | library `algorithm/digital/Crc.hpp` — the parameterized CRC the Mode S parity is one instance of | `a5ca312` |
+| `lib/…/algorithm/digital/Ppm.hpp` | library `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant | `e65a957` |
+| `lib/…/algorithm/sync/MmseInterpolator.hpp` | library `algorithm/sync/MmseInterpolator.hpp` — the tap bank the phase search interpolates with | `813f054` |
+| `lib/…/algorithm/filter/FilterDesign.hpp` | library `algorithm/filter/FilterDesign.hpp` — carried whole for the one function the bank calls; not in a GNU Radio 4 release | `7a32d0e` |
+| `lib/…/algorithm/fourier/window.hpp` | library `algorithm/fourier/window.hpp` — the SDK installs an older one whose `window::Type` stops at Kaiser, and `FilterDesign.hpp` names Bartlett, Welch and Parzen | `a48ad14` |
 | `blocks/digital/…/PpmFramer.hpp` | blocks `blocks/digital/PpmFramer.hpp` — the block over that kernel | `71a8d45c` |
 | `blocks/adsb/…/ModeS.hpp` | blocks `blocks/adsb/ModeS.hpp` — the message layer | `9fd023db` |
 | `blocks/adsb/…/AdsbPrinter.hpp` | blocks `blocks/adsb/AdsbPrinter.hpp` — the renderer | `23fb32f4` |
@@ -373,12 +383,13 @@ from, so a later sync can tell at a glance what has moved.
 | `blocks/test/qa_AdsbPrinter.cpp` | blocks `blocks/adsb/test/qa_AdsbPrinter.cpp` | `23fb32f4` |
 | `blocks/test/TestSpans.hpp` | blocks `blocks/digital/test/TestSpans.hpp` — the span pair alone; the file it came from also carries graph-driving helpers no test here uses | `ca84b8f4` |
 
-They keep their contract comments and their tests. Everything sits in the `gr4adsb` namespace under
-the `gr4adsb/…` include path, so nothing here collides with an installed GNU Radio. The three
-interpolation headers keep their own sub-namespaces under that name, `gr4adsb::sync`,
-`gr4adsb::filter::design` and `gr4adsb::algorithm::window`, so they sit beside the SDK's copies of
-the same code rather than over them; that is what makes carrying `window.hpp` possible at all. If
-these blocks land in GNU Radio 4 itself, this module shrinks to the application.
+They keep their contract comments and their tests. Everything sits in the `gr4adsb` namespace, the
+blocks under the `gr4adsb/…` include path and the algorithm headers under `gr4adsb/algorithm/…`, so
+nothing here collides with an installed GNU Radio. The three interpolation headers keep their own
+sub-namespaces under that name, `gr4adsb::sync`, `gr4adsb::filter::design` and
+`gr4adsb::algorithm::window`, so they sit beside the SDK's copies of the same code rather than over
+them; that is what makes carrying `window.hpp` possible at all. If these blocks land in GNU Radio 4
+itself, this module shrinks to the application.
 
 ## Next
 

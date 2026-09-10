@@ -24,7 +24,7 @@
 #include <gnuradio-4.0/Tag.hpp>
 #include <gnuradio-4.0/annotated.hpp>
 
-#include <gr4adsb/digital/Ppm.hpp>
+#include <gr4adsb/algorithm/digital/Ppm.hpp>
 
 namespace gr4adsb {
 

@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <vector>
 
-#include <gr4adsb/filter/FilterDesign.hpp>
+#include <gr4adsb/algorithm/filter/FilterDesign.hpp>
 
 /**
  * @brief The minimum-mean-square-error fractional-delay interpolator, generated in closed form from
