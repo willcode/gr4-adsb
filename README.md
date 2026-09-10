@@ -33,19 +33,22 @@ costs something are called out under Building and Running below.
 ## The chain
 
 ```
-live:   SoapySource<complex<float>> ──────────────────────────► Abs ─► PpmFramer ─► ModeSDecode ─► AdsbPrinter ─► ConsoleSink
-file:   BasicFileSource<int16_t> ─► InterleavedToComplex ─────► Abs ─► (the same tail)
+live:   SoapySource<complex<float>> ──────────────────────────► PpmFramer<complex<float>> ─► ModeSDecode ─► AdsbPrinter ─► ConsoleSink
+file:   BasicFileSource<int16_t> ─► InterleavedToComplex ─────► (the same tail)
 ```
 
-- **`Abs`** takes the magnitude. Mode S carries nothing in phase, so this is where the complex
-  stream ends.
-- **`PpmFramer`** (this module) reads frames out of the magnitude stream. Pulse-position modulation
+- **`PpmFramer`** (this module) reads frames out of the sample stream. Pulse-position modulation
   puts one pulse per bit period, in the first half for a one and the second for a zero, so a bit is
   decided by comparing the two halves of one period against each other: there is no carrier to
   acquire and no clock to recover. The framer nominates a position wherever the preamble's four
   pulses stand out from the gaps by at least `threshold`, reads the frame, and checks the 24-bit
   parity. Only a frame the parity vouches for consumes its own window; every other nomination
   advances the search by one sample, so a false nomination cannot swallow the real frame behind it.
+  Mode S carries nothing in phase and every decision here is made on magnitude, but the complex
+  samples reach the block rather than their magnitudes, because deciding a position at the
+  sub-sample phase its preamble sits on interpolates the signal and a magnitude stream has thrown
+  away what an interpolation reads. `PpmFramer<float>` takes magnitudes as before and decides at
+  integer positions only; the demo instantiates `PpmFramer<std::complex<float>>`.
 - **`ModeSDecode`** (this module) reads the downlink message into typed metadata and leaves the
   frame's octets as the payload, so nothing the frame said is lost.
 - **`AdsbPrinter`** (this module) renders one line of text per record, published as a record of its
@@ -59,12 +62,48 @@ file:   BasicFileSource<int16_t> ─► InterleavedToComplex ─────► 
 rate has to make a slot a whole number of samples; the framer refuses anything else rather than
 resample behind your back. 2, 4, 6, 8 MS/s are all fine, 2.4 MS/s is not.
 
-**2 MS/s is the floor, and it is a weak one.** At that rate a slot is a single sample, and the framer
-has no sub-sample phase handling: a pulse that straddles two samples splits its energy between a pulse
-slot and a gap slot, so the shape test sees a smaller ratio and the bit decisions between adjacent
-samples turn on quantization noise. Expect fewer frames and many more parity failures than at 4 or
-6 MS/s from the same antenna. An RTL-SDR tops out below 4 MS/s, so 2 MS/s is its only rate here; see
-the RTL-SDR paragraph under Running for the settings that make it usable.
+**The framer decides each position at the sub-sample phase its preamble sits on, and that is on by
+default.** A burst does not arrive on the sample clock. A pulse that straddles two samples splits its
+energy between a pulse slot and a gap slot, and a gap slot is the very quantity the shape test
+measures the pulses against, so bad timing lowers the numerator and raises the denominator at once.
+So a position first passes a cheap test at integer positions, at `--threshold` times `--coarse-ratio`
+(default 0.5), and each of those candidates is then measured again at `--phase-steps` offsets
+(default 8) spanning one sample period, on the signal interpolated from the complex samples. The best
+offset has to reach the full `--threshold`, and it decides the bits as well; it travels on the record
+as `sample_phase`, so a frame's position in the stream is `sample_start + sample_phase` and not
+`sample_start` alone. `--phase-steps 1` turns all of this off and leaves the decisions exactly where
+they were before it existed.
+
+**It pays most where the pulse is oversampled, and it pays at 2 MS/s as well.** Above two samples a
+slot the argument is straightforward: a pulse spans more than one sample, so an interpolation has
+something to work with. On a synthetic burst through a front end exactly one slot wide, sampled at
+one sample a slot, it should buy nothing at all — that filter makes the samples the linear
+interpolation of the ideal slot values, and no interpolation recovers what a linear one already
+threw away. The upstream test measures exactly that: at one sample a slot the search lifts the worst
+preamble shape ratio from 1.000 to 1.353 against a threshold of 2 and admits the same offsets the
+integer test admits; at three samples a slot it lifts 2.600 to 3.470 and admits every offset.
+
+**A real RTL-SDR is not that filter, and on its captures the search finds frames.** Replayed offline
+at 2 MS/s, threshold 2, the same two 15 s captures the RTL-SDR paragraph under Running tables, the
+admitted frames go from 16 to 28 and from 21 to 44 — every frame the integer decision found is still
+found, at the same stream position, and the new ones carry the same two aircraft on coherent
+descents with the 24-bit parity vouching for each. So the synthetic case is a floor, not a
+prediction: what the search buys at one sample a slot depends on the receiver's own front end, which
+on a dongle is nothing like a half-microsecond boxcar.
+
+**It costs candidate work, and the noise floor sets how much.** The coarse test at half the threshold
+passes far more positions than the full test does, and every one of them is interpolated. Measured
+single-threaded on this machine, replaying 15 s of air: 0.71 s of CPU at `--phase-steps 1` against
+7.87 s at 8 on the noisier capture (1.6 M candidates), and 0.61 s against 3.02 s on the quieter one
+(474 k). On the 30 s recording under Running, which is quiet, 1.67 s against 1.82 s. So the fine
+step is real-time at 2 MS/s on one core with room to spare, but the margin is the noise floor's to
+give — raise `--coarse-ratio` if a run cannot keep up.
+
+**2 MS/s is still the floor and still a weak one, for the reason it always was: the sample rate.**
+Expect fewer frames and many more parity failures than at 4 or 6 MS/s from the same antenna, and
+`--agc on` is still the first setting to reach for on a dongle — it changes the parity failure rate,
+which is a signal-quality change, where the phase step changes the frame count. An RTL-SDR tops out
+below 4 MS/s, so 2 MS/s is its only rate here; see the RTL-SDR paragraph under Running.
 
 ## The bandwidth note
 
@@ -226,19 +265,56 @@ lifts the signal into the converter's range. Measured on air, same antenna, 20 s
 | `--agc on --threshold 1.5` | 168 | 27 | 44 |
 
 Traffic differs between windows, but the parity failure rate does not lie: with AGC nearly every
-long nomination is a real frame. A lower `--threshold` at 2 MS/s buys nominations, not frames.
-Interpolating the 2 MS/s capture to 4 MS/s ahead of the framer was also tried offline and made
-things worse, because interpolation smears the pulse into the gap slots the shape test measures.
+long nomination is a real frame. Interpolating the 2 MS/s capture to 4 MS/s ahead of the framer was
+also tried offline and made things worse, because resampling smears the pulse into the gap slots the
+shape test measures — which is why the fine step interpolates inside the shape test instead, where
+it can choose the offset rather than commit to one.
+
+Both fixed-gain runs above were captured raw and replayed offline, 15 s each, so the phase step can
+be measured against the integer decision on identical air. At 2 MS/s, `--phase-steps 1` against the
+default 8:
+
+| capture | phase steps | threshold | candidates | nominations | admitted | parity failed | short |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 40 dB | 1 | 2 | 3 398 | 3 398 | 16 | 605 | 2 777 |
+| 40 dB | 8 | 2 | 1 601 985 | 3 450 | **28** | 608 | 2 814 |
+| 40 dB | 8 | 1.5 | 1 602 462 | 3 710 | 50 | 691 | 2 969 |
+| 49.6 dB | 1 | 2 | 3 014 | 3 014 | 21 | 655 | 2 338 |
+| 49.6 dB | 8 | 2 | 474 100 | 3 083 | **44** | 661 | 2 378 |
+| 49.6 dB | 8 | 1.5 | 475 120 | 3 491 | 80 | 806 | 2 605 |
+
+`--phase-steps 1` reproduces the counters these captures gave before the fine step existed, sample
+for sample, which is what makes the rest of the table a comparison. At the default it admits 28
+frames where the integer decision admitted 16, and 44 where it admitted 21, while the parity
+failures barely move (605 to 608, 655 to 661): the search is finding frames, not accepting noise.
+Every frame the integer decision found is still found at the same stream position, and the added
+ones decode as the same two aircraft on coherent descents.
+
+A lower `--threshold` does buy real frames on these fixed-gain captures — 28 to 50 and 44 to 80 —
+but it buys parity failures in the same breath, and on air with AGC an earlier comparison found no
+gain from it at all. `--agc on` remains the setting that matters on a dongle; `--threshold 1.5` is
+for a capture you already have and cannot retake.
 
 `--device` takes the SoapySDR device string you would give any other Soapy program. The application
 splits it into the two settings the block wants — the `driver=` key becomes `device` and the rest
 becomes `device_parameter` — so a bare `--device hackrf` works too.
 
+**`--phase-steps` and `--coarse-ratio` are the fine step's two settings.** A position first has to
+pass a cheap test at integer sample positions, at `--threshold` times `--coarse-ratio` (default 0.5);
+those passes are the `candidates` in the exit line. Each candidate is then measured again at
+`--phase-steps` offsets spanning one sample period (default 8), and the best of them has to reach the
+full `--threshold` to become a nomination. `--phase-steps 1` turns the fine step off and leaves every
+decision exactly where it was before there was one, coarse test included. `--coarse-ratio` is the
+cost dial: raising it toward 1 admits fewer candidates and so interpolates less, at the risk of
+refusing a badly timed preamble before the search ever sees it, which is the whole thing the search
+is for. See the rate rule for what it buys and what it costs.
+
 Full command line: `--device`, `--file`, `--frequency` (default 1090e6), `--rate` (default 4e6),
-`--threshold` (default 2), `--seconds`, and the three optional device settings `--bandwidth`,
-`--gain` and `--agc on|off`, each left to the device when not given. Exit codes: 0 on a clean stop,
-2 on a bad command line, 1 on a graph error, each with the reason on stderr. Sweep `--gain` if the
-counters printed at exit show nominations without admitted frames.
+`--threshold` (default 2), `--phase-steps` (default 8), `--coarse-ratio` (default 0.5), `--seconds`,
+and the three optional device settings `--bandwidth`, `--gain` and `--agc on|off`, each left to the
+device when not given. Exit codes: 0 on a clean stop, 2 on a bad command line, 1 on a graph error,
+each with the reason on stderr. Sweep `--gain` if the counters printed at exit show nominations
+without admitted frames.
 
 On an SDK predating **gnuradio4-blocks #26** (merged upstream on 2026-09-09), `SoapySource` dropped a
 whole 8192-sample chunk whenever the graph below it stopped taking samples — about 2 ms of air at
@@ -251,24 +327,30 @@ Most of the chain is upstream GNU Radio 4 and is used as installed. What follows
 repository because it is not in an upstream release. It comes from the willcode forks of GNU Radio 4 —
 [gnuradio4-blocks](https://github.com/willcode/gnuradio4-blocks) and
 [gnuradio4-library](https://github.com/willcode/gnuradio4-library) — branch `rework`, blocks at
-`f634dfc0` and library at `cfe5081`. Each row names the commit that last touched the file it was taken
+`71a8d45c` and library at `e65a957`. Each row names the commit that last touched the file it was taken
 from, so a later sync can tell at a glance what has moved.
 
 | Carried into | Taken from | Commit |
 |---|---|---|
 | `blocks/digital/…/Crc.hpp` | library `algorithm/digital/Crc.hpp` — the parameterized CRC the Mode S parity is one instance of | `a5ca312` |
-| `blocks/digital/…/Ppm.hpp` | library `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant | `52f03fa` |
-| `blocks/digital/…/PpmFramer.hpp` | blocks `blocks/digital/PpmFramer.hpp` — the block over that kernel | `9ee457d2` |
+| `blocks/digital/…/Ppm.hpp` | library `algorithm/digital/Ppm.hpp` — `PpmScanner`, the framing kernel, and the `modeS()` framing constant | `e65a957` |
+| `blocks/digital/…/sync/MmseInterpolator.hpp` | library `algorithm/sync/MmseInterpolator.hpp` — the tap bank the phase search interpolates with | `813f054` |
+| `blocks/digital/…/filter/FilterDesign.hpp` | library `algorithm/filter/FilterDesign.hpp` — carried whole for the one function the bank calls; not in an upstream release | `7a32d0e` |
+| `blocks/digital/…/fourier/window.hpp` | library `algorithm/fourier/window.hpp` — the SDK installs an older one whose `window::Type` stops at Kaiser, and `FilterDesign.hpp` names Bartlett, Welch and Parzen | `a48ad14` |
+| `blocks/digital/…/PpmFramer.hpp` | blocks `blocks/digital/PpmFramer.hpp` — the block over that kernel | `71a8d45c` |
 | `blocks/adsb/…/ModeS.hpp` | blocks `blocks/adsb/ModeS.hpp` — the message layer | `9fd023db` |
 | `blocks/adsb/…/AdsbPrinter.hpp` | blocks `blocks/adsb/AdsbPrinter.hpp` — the renderer | `23fb32f4` |
-| `blocks/test/qa_PpmFramer.cpp` | blocks `blocks/digital/test/qa_PpmFramer.cpp` | `9ee457d2` |
+| `blocks/test/qa_PpmFramer.cpp` | blocks `blocks/digital/test/qa_PpmFramer.cpp` | `71a8d45c` |
 | `blocks/test/qa_ModeSDecode.cpp` | blocks `blocks/adsb/test/qa_ModeSDecode.cpp` | `9fd023db` |
 | `blocks/test/qa_AdsbPrinter.cpp` | blocks `blocks/adsb/test/qa_AdsbPrinter.cpp` | `23fb32f4` |
-| `blocks/test/TestSpans.hpp` | blocks `blocks/digital/test/TestSpans.hpp` | `ca84b8f4` |
+| `blocks/test/TestSpans.hpp` | blocks `blocks/digital/test/TestSpans.hpp` — the span pair alone; the fork's file also carries graph-driving helpers no test here uses | `ca84b8f4` |
 
 They keep their contract comments and their tests. Everything was renamed out of the fork's
 namespaces into `gr4adsb`, and the include path is `gr4adsb/…`, so nothing here collides with an
-installed GNU Radio. If these blocks are upstreamed, this module shrinks to the application.
+installed GNU Radio. The three interpolation headers keep the fork's own sub-namespaces under that
+name — `gr4adsb::sync`, `gr4adsb::filter::design` and `gr4adsb::algorithm::window` — so they sit
+beside the SDK's copies of the same code rather than over them, which is what lets `window.hpp` be
+carried at all. If these blocks are upstreamed, this module shrinks to the application.
 
 ## Next
 
@@ -277,9 +359,10 @@ Two components are named but deliberately not built or wired, because they are n
 - **A map display.** It attaches to the decoded record stream — `ModeSDecode`'s output, before
   `AdsbPrinter`, where position, altitude, callsign and velocity are already typed metadata on the
   record and nothing has to be parsed back out of a rendered line.
-- **A waterfall.** It attaches to the magnitude stream — `Abs`'s output, before `PpmFramer`, which is
-  the last point where every sample is still present. A spectrum display would instead want a tap on
-  the complex stream ahead of `Abs`.
+- **A waterfall.** It attaches to the sample stream ahead of `PpmFramer`, which is the last point
+  where every sample is still present, and where they are still complex — so a spectrum display taps
+  the same place, and a magnitude display puts a `gr::blocks::basic::Abs<std::complex<float>>` of its
+  own on the tap rather than in the framer's path.
 
 Neither is in the graph. Adding either means one more `emplaceBlock` and one more `connect` at the
 point named above; the existing chain does not have to change to make room.
