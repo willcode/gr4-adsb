@@ -19,13 +19,15 @@ an earlier frame from that address has given one.
 This demo is built against **GNU Radio 4 main plus the pull requests still expected to merge**, not
 against bare main. At the time of writing that is:
 
-- **core** — main `2885898b` plus #35, #38, #39, #44, #45, #47
+- **core** — main `2885898b` plus #35, #39, #44, #45, #47, #49; #35 is not merged separately, it
+  rides in as a commit inside #39
 - **library** — main `d2e91398`; nothing of ours is open against it
-- **blocks** — main `3294b9fe` (which already carries #26, merged upstream on 2026-09-09) plus #27,
-  #31, #32, #34, #36, #37
+- **blocks** — main `db8836c2` (which already carries #26 and #36, both merged upstream on
+  2026-09-09) plus #27, #31, #32, #34, #37, #38
 
-The SDK it was built and tested against on 2026-09-09 was an integration of those branches, not an
-upstream release. It also configures and runs against bare upstream main — the two places where that
+The SDK it was built and tested against on 2026-09-09 was an integration of those branches — the
+`integration/expected-20260909b` branches of core and blocks, library at its main — not an upstream
+release. It also configures and runs against bare upstream main — the two places where that
 costs something are called out under Building and Running below.
 
 ## The chain
@@ -117,9 +119,11 @@ two you got.
 
 Two things about that family are worth knowing when you build against a stock SDK:
 
-- It is the only block family that exports no CMake target — there is no `gnuradio4::gr-sdr` — so
-  `app/CMakeLists.txt` finds its headers on the prefix and `SoapySDR` itself rather than linking one
-  target. If upstream starts exporting the target, that block of CMake collapses to one line.
+- The target SDK exports `gnuradio4::gr-sdr` (**gnuradio4-blocks #38**), and that one target carries
+  the sdr include path, the algorithm headers `SoapySource.hpp` pulls in and `SoapySDR` itself, so
+  `app/CMakeLists.txt` links it and nothing else. An SDK without #38 exports no target for this one
+  family, and the same file then finds the headers on the prefix and `SoapySDR` by hand; the
+  configure line says which of the two it took.
 - `SoapySource.hpp` includes `gnuradio-4.0/sdr/NamespaceCompatibility.hpp`, which the family did not
   install before **gnuradio4-blocks #26**. Only on an SDK predating that fix does the build tree
   supply exactly that one header from a directory holding nothing else, leaving every other
@@ -146,9 +150,10 @@ is the direct, statically checked route. The registry matters for a consumer tha
 from a saved description or loads the shared object as a plugin.
 
 **The plugin ABI is versioned and the loader demands an exact match**, so rebuild this module
-against whatever SDK it is going to be loaded into. On the target SDK above the ABI is **2**
-(`GR_PLUGIN_CURRENT_ABI_VERSION` in `Plugin.hpp`, from core #38); an SDK without #38 is still at 1,
-and a plugin built against one will not load into the other.
+against whatever SDK it is going to be loaded into. On the target SDK above the ABI is **1**
+(`GR_PLUGIN_CURRENT_ABI_VERSION` in `Plugin.hpp`), the same as on bare upstream main; core #38, a
+draft that is not expected to merge, would take it to 2, and a plugin built against one of the two
+will not load into the other.
 
 ## Running
 
