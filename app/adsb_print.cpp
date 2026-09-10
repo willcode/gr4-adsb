@@ -1,12 +1,15 @@
 // adsb_print — the demo application: build the 1090 MHz receive chain, run it, print one line per decoded frame.
 //
-// Live:  SoapySource -> Abs -> PpmFramer -> ModeSDecode -> AdsbPrinter -> ConsoleSink
-// File:  BasicFileSource<int16_t> -> InterleavedToComplex -> Abs -> (the same tail)
+// Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
+// File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
 //
-// Everything above Abs is upstream GNU Radio 4; the framer, the decoder and the renderer are this module's blocks.
+// Everything above the framer is upstream GNU Radio 4; the framer, the decoder and the renderer are this module's
+// blocks. The framer takes the complex samples themselves rather than their magnitudes, because deciding a frame at
+// the sub-sample phase its preamble sits on needs what an interpolation reads and a magnitude stream has thrown away.
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <complex>
 #include <csignal>
 #include <cstddef>
@@ -75,6 +78,9 @@ struct Options {
     float       threshold = 2.0F;     ///< the framer's preamble nomination ratio
     double      seconds   = 0.0;      ///< run bound; 0 runs until the source ends or the user interrupts
 
+    std::uint32_t phaseSteps  = 8U;   ///< sub-sample offsets a candidate is re-tested at; 1 turns the fine step off
+    float         coarseRatio = 0.5F; ///< the share of `threshold` the integer-position test admits a candidate at
+
     // Unset means "do not ask the device for this". The block applies every setting it holds when it opens the
     // device, and its defaults there are not neutral — 10 dB of gain, 500 kHz of bandwidth — so a value left out
     // here has to reach the block as an empty vector, not as an absent key.
@@ -93,6 +99,8 @@ void usage() {
     std::println(stderr, "  --gain DB        receive gain (default: the device's own)");
     std::println(stderr, "  --agc on|off     ask for the device's automatic gain control (default off)");
     std::println(stderr, "  --threshold R    framer nomination ratio, greater than one (default 2)");
+    std::println(stderr, "  --phase-steps N  sub-sample offsets each candidate is re-tested at; 1 turns the fine step off (default 8)");
+    std::println(stderr, "  --coarse-ratio R share of the threshold the integer-position test admits a candidate at, in (0, 1] (default 0.5)");
     std::println(stderr, "  --seconds N      stop after N seconds");
 }
 
@@ -158,7 +166,7 @@ void usage() {
                 return std::nullopt;
             }
             options.agc = value == "on";
-        } else if (arg == "--frequency" || arg == "--rate" || arg == "--bandwidth" || arg == "--gain" || arg == "--threshold" || arg == "--seconds") {
+        } else if (arg == "--frequency" || arg == "--rate" || arg == "--bandwidth" || arg == "--gain" || arg == "--threshold" || arg == "--phase-steps" || arg == "--coarse-ratio" || arg == "--seconds") {
             const std::optional<double> value = number(text());
             if (!value.has_value()) {
                 refuse("a number");
@@ -174,6 +182,15 @@ void usage() {
                 options.gain = *value;
             } else if (arg == "--threshold") {
                 options.threshold = static_cast<float>(*value);
+            } else if (arg == "--phase-steps") {
+                // a count of offsets, so anything but a whole number is a typing error rather than a setting
+                if (*value < 1.0 || *value > 1024.0 || *value != std::floor(*value)) {
+                    refuse("a whole number of offsets, at least one and at most 1024");
+                    return std::nullopt;
+                }
+                options.phaseSteps = static_cast<std::uint32_t>(*value);
+            } else if (arg == "--coarse-ratio") {
+                options.coarseRatio = static_cast<float>(*value);
             } else {
                 options.seconds = *value;
             }
@@ -190,12 +207,16 @@ void usage() {
         return std::nullopt;
     }
     // the framer's own rule, asked of the framer, so the application and the block cannot disagree about it
-    if (gr4adsb::PpmFramer::slotsFor(options.rate) == 0UZ) {
+    if (gr4adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
         std::println(stderr, "adsb_print: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
         return std::nullopt;
     }
     if (options.threshold <= 1.F) {
         std::println(stderr, "adsb_print: --threshold must be greater than one, got {}", options.threshold);
+        return std::nullopt;
+    }
+    if (!(options.coarseRatio > 0.F) || options.coarseRatio > 1.F) {
+        std::println(stderr, "adsb_print: --coarse-ratio must lie in (0, 1], because a coarse test stricter than the fine one would refuse what the fine one would keep, got {}", options.coarseRatio);
         return std::nullopt;
     }
     if (options.frequency <= 0.0 || options.seconds < 0.0 || options.bandwidth.value_or(1.0) <= 0.0) {
@@ -220,15 +241,16 @@ int main(int argc, char** argv) {
     const Options& options = *parsed;
 
     gr::Graph flow;
-    auto&     magnitude = flow.emplaceBlock<gr::blocks::basic::Abs<std::complex<float>>>();
-    auto&     framer    = flow.emplaceBlock<gr4adsb::PpmFramer>({
+    auto&     framer  = flow.emplaceBlock<gr4adsb::PpmFramer<std::complex<float>>>({
         {"sample_rate", options.rate},
         {"profile", std::string("mode_s")},
         {"threshold", options.threshold},
+        {"phase_steps", static_cast<gr::Size_t>(options.phaseSteps)},
+        {"coarse_ratio", options.coarseRatio},
     });
-    auto&     decoder   = flow.emplaceBlock<gr4adsb::ModeSDecode>();
-    auto&     printer   = flow.emplaceBlock<gr4adsb::AdsbPrinter>();
-    auto&     console   = flow.emplaceBlock<ConsoleSink>();
+    auto&     decoder = flow.emplaceBlock<gr4adsb::ModeSDecode>();
+    auto&     printer = flow.emplaceBlock<gr4adsb::AdsbPrinter>();
+    auto&     console = flow.emplaceBlock<ConsoleSink>();
 
     bool wired = true;
     if (!options.file.empty()) {
@@ -253,8 +275,8 @@ int main(int argc, char** argv) {
         }
 
         auto& pair = flow.emplaceBlock<gr::blocks::basic::InterleavedToComplex<std::int16_t, std::complex<float>>>();
-        std::println(stderr, "adsb_print: {} at {:.3f} MS/s, threshold {}", options.file, static_cast<double>(options.rate) / 1e6, options.threshold);
-        wired = flow.connect<"out", "interleaved">(source, pair).has_value() && flow.connect<"out", "in">(pair, magnitude).has_value();
+        std::println(stderr, "adsb_print: {} at {:.3f} MS/s, threshold {}, {} phase steps at a coarse ratio of {}", options.file, static_cast<double>(options.rate) / 1e6, options.threshold, options.phaseSteps, options.coarseRatio);
+        wired = flow.connect<"out", "interleaved">(source, pair).has_value() && flow.connect<"out", "in">(pair, framer).has_value();
     } else {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
@@ -287,21 +309,20 @@ int main(int argc, char** argv) {
         options.gain.has_value() ? note(asked, std::format("gain {} dB", *options.gain)) : note(left, "gain");
         options.bandwidth.has_value() ? note(asked, std::format("bandwidth {:.3f} MHz", *options.bandwidth / 1e6)) : note(left, "bandwidth");
         options.agc ? note(asked, "AGC on") : note(left, "gain mode");
-        std::println(stderr, "adsb_print: {} at {:.4f} MHz, {:.3f} MS/s, threshold {}", options.device, options.frequency / 1e6, static_cast<double>(options.rate) / 1e6, options.threshold);
+        std::println(stderr, "adsb_print: {} at {:.4f} MHz, {:.3f} MS/s, threshold {}, {} phase steps at a coarse ratio of {}", options.device, options.frequency / 1e6, static_cast<double>(options.rate) / 1e6, options.threshold, options.phaseSteps, options.coarseRatio);
         std::println(stderr, "adsb_print: asking the device for: rate, frequency{}{}", asked.empty() ? "" : ", ", asked);
         std::println(stderr, "adsb_print: left at the device's default: {}", left.empty() ? std::string("nothing") : left);
 
-        wired = flow.connect<"out", "in">(source, magnitude).has_value();
+        wired = flow.connect<"out", "in">(source, framer).has_value();
 #else
         std::println(stderr, "adsb_print: built without SoapySDR, so only --file is available; see the README under Building");
         return 1;
 #endif
     }
 
-    wired = wired                                                       //
-            && flow.connect<"abs", "in">(magnitude, framer).has_value() //
-            && flow.connect<"out", "in">(framer, decoder).has_value()   //
-            && flow.connect<"out", "in">(decoder, printer).has_value()  //
+    wired = wired                                                      //
+            && flow.connect<"out", "in">(framer, decoder).has_value()  //
+            && flow.connect<"out", "in">(decoder, printer).has_value() //
             && flow.connect<"out", "in">(printer, console).has_value();
     if (!wired) {
         std::println(stderr, "adsb_print: the graph could not be connected");
@@ -341,7 +362,7 @@ int main(int argc, char** argv) {
     const bool endedItself = done.load(std::memory_order_relaxed);
     runner.join();
 
-    std::println(stderr, "adsb_print: {} samples, {} nominations -> {} admitted, {} crc failed, {} short; {} lines", framer.nSamples, framer.nNominations, framer.nAdmitted, framer.nCrcFailed, framer.nShortFormat, console.nLines);
+    std::println(stderr, "adsb_print: {} samples, {} candidates -> {} nominations -> {} admitted, {} crc failed, {} short; {} lines", framer.nSamples, framer.nCandidates, framer.nNominations, framer.nAdmitted, framer.nCrcFailed, framer.nShortFormat, console.nLines);
     std::println(stderr, "adsb_print: {}", endedItself ? "the graph ended on its own" : "stopped before the graph ended");
     return failed.load(std::memory_order_relaxed) ? 1 : 0;
 }

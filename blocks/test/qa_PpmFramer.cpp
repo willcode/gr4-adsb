@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -34,6 +35,10 @@ using gr4adsb::test::InputSpan;
 using gr4adsb::test::OutputSpan;
 
 using Record = gr::DataSet<std::uint8_t>;
+
+/// The two instantiations: magnitudes, as this framer has always taken them, and the samples the magnitudes came from.
+using MagFramer = PpmFramer<float>;
+using IqFramer  = PpmFramer<std::complex<float>>;
 
 /// The five published 1090 MHz extended squitters, whose parity fields are the bare CRC.
 constexpr std::array<std::string_view, 5> kPublished{"8D4840D6202CC371C32CE0576098", "8D40621D58C382D690C8AC2863A7", "8D40621D58C386435CC412692AD6", "8D485020994409940838175B284F", "8D40621D58C3862590C412D77427"};
@@ -157,7 +162,7 @@ template<typename TBlock>
 /// What one drive of the block produced, with the counters it reported.
 struct Framed {
     std::vector<Record> records{};
-    std::uint64_t       samples = 0ULL, nominations = 0ULL, admitted = 0ULL, crcFailed = 0ULL, shortFormat = 0ULL, published = 0ULL, tagsDropped = 0ULL, rateRefused = 0ULL, tailDropped = 0ULL, overrunDropped = 0ULL;
+    std::uint64_t       samples = 0ULL, candidates = 0ULL, nominations = 0ULL, admitted = 0ULL, crcFailed = 0ULL, shortFormat = 0ULL, published = 0ULL, tagsDropped = 0ULL, rateRefused = 0ULL, tailDropped = 0ULL, overrunDropped = 0ULL;
     std::size_t         held = 0UZ; ///< samples still in the working buffer when the run ended, before stop() drops them
 };
 
@@ -165,7 +170,8 @@ struct Framed {
 ///
 /// @p room is the records the sink offers per call, and @p connected drives the block with its output port left
 /// unconnected, which is what a graph does when nothing is wired to `out`.
-[[nodiscard]] Framed feed(PpmFramer& block, std::span<const float> input, std::size_t chunk = 0UZ, std::span<const gr::Tag> tags = {}, std::size_t room = 64UZ, bool connected = true) {
+template<typename T>
+[[nodiscard]] Framed feed(PpmFramer<T>& block, std::span<const T> input, std::size_t chunk = 0UZ, std::span<const gr::Tag> tags = {}, std::size_t room = 64UZ, bool connected = true) {
     Framed              result;
     const std::size_t   stride = chunk == 0UZ ? std::max(input.size(), 1UZ) : chunk;
     std::vector<Record> scratch(room);
@@ -175,7 +181,7 @@ struct Framed {
         const auto        first = std::ranges::lower_bound(tags, base, std::ranges::less{}, &gr::Tag::index);
         const auto        last  = std::ranges::lower_bound(tags, base + count, std::ranges::less{}, &gr::Tag::index);
 
-        InputSpan<float>   inSpan(input.subspan(base, count), base, std::span<const gr::Tag>(first, last));
+        InputSpan<T>       inSpan(input.subspan(base, count), base, std::span<const gr::Tag>(first, last));
         OutputSpan<Record> outSpan(connected ? std::span<Record>(scratch) : std::span<Record>{}, 0UZ, nullptr, connected);
         std::ignore = block.processBulk(inSpan, outSpan);
         for (std::size_t k = 0UZ; k < outSpan.count; ++k) {
@@ -190,6 +196,7 @@ struct Framed {
     block.stop();
 
     result.samples        = block.nSamples;
+    result.candidates     = block.nCandidates;
     result.nominations    = block.nNominations;
     result.admitted       = block.nAdmitted;
     result.crcFailed      = block.nCrcFailed;
@@ -239,11 +246,12 @@ struct Framed {
 
 [[nodiscard]] bool metaHas(const Record& record, std::string_view key) { return metaOf(record).contains(gr::property_map::key_type(key)); }
 
-struct FiniteSource : gr::Block<FiniteSource> {
-    gr::PortOut<float> out;
+template<typename T>
+struct FiniteSource : gr::Block<FiniteSource<T>> {
+    gr::PortOut<T> out;
     GR_MAKE_REFLECTABLE(FiniteSource, out);
-    std::vector<float> _data{};
-    std::size_t        _pos = 0UZ;
+    std::vector<T> _data{};
+    std::size_t    _pos = 0UZ;
 
     [[nodiscard]] gr::work::Status processBulk(gr::OutputSpanLike auto& outSpan) noexcept {
         const std::size_t n = std::min(outSpan.size(), _data.size() - _pos);
@@ -291,11 +299,12 @@ void runGraph(gr::Graph flow, TCollect&& collect) {
 }
 
 /// @brief Runs @p samples through a `PpmFramer` under the scheduler and hands back what the sink saw.
-[[nodiscard]] std::vector<Record> scheduled(std::vector<float> samples, gr::property_map settings) {
+template<typename T = float>
+[[nodiscard]] std::vector<Record> scheduled(std::vector<T> samples, gr::property_map settings) {
     gr::Graph flow;
-    auto&     source = flow.emplaceBlock<FiniteSource>();
+    auto&     source = flow.emplaceBlock<FiniteSource<T>>();
     source._data     = std::move(samples);
-    auto& framer     = flow.emplaceBlock<PpmFramer>(std::move(settings));
+    auto& framer     = flow.emplaceBlock<PpmFramer<T>>(std::move(settings));
     auto& sink       = flow.emplaceBlock<RecordSink>();
     boost::ut::expect(flow.connect<"out", "in">(source, framer).has_value());
     boost::ut::expect(flow.connect<"out", "in">(framer, sink).has_value());
@@ -327,6 +336,80 @@ struct Rng {
     }
     return noise;
 }
+
+/// @brief Fine samples a slot in the rendered waveform, so an offset of an eighth of a sample is an exact grid step.
+constexpr std::size_t kGrid = 32UZ;
+
+/// @brief Slots of silence the renderer puts before the burst, so the scan has positions on either side of it.
+constexpr std::size_t kLead = 8UZ;
+
+/// @brief The carrier every rendered sample sits on, so nothing downstream can pass by reading a real part.
+constexpr float kCarrier = 0.7F;
+
+/// @brief One magnitude stream as the samples it could have been read from, unchanged in magnitude.
+[[nodiscard]] std::vector<std::complex<float>> asIq(std::span<const float> magnitudes) {
+    std::vector<std::complex<float>> wave;
+    wave.reserve(magnitudes.size());
+    const std::complex<float> carrier = std::polar(1.F, kCarrier);
+    for (const float value : magnitudes) {
+        wave.push_back(value * carrier);
+    }
+    return wave;
+}
+
+/**
+ * @brief One frame as complex baseband, one sample a slot, sitting @p tau samples away from the sample it is nearest.
+ *
+ * Rectangular pulses are laid on a grid of `kGrid` samples a slot and averaged over one slot, which is the front end
+ * this framer is written for: each sample is half a microsecond of signal integrated. Sampling that grid at one
+ * sample a slot delays the burst by @p tau, leaving the frame's first slot at index `lead + tau` — so a scanner
+ * reading it at the integer position `lead` has to look @p tau samples ahead to find the shape whole.
+ *
+ * @p tau in [-0.5, 0.5), a multiple of `1 / kGrid`, so the grid is sampled and never resampled.
+ */
+[[nodiscard]] std::vector<std::complex<float>> renderIq(std::span<const std::uint8_t> frame, float tau, std::size_t lead = kLead, std::size_t trail = 260UZ) {
+    const std::size_t  bits = frame.size() * 8UZ;
+    std::vector<float> slots;
+    slots.reserve(lead + 16UZ + 2UZ * bits + trail);
+    slots.insert(slots.end(), lead, 0.F);
+    for (const int pulse : kPreamble) {
+        slots.push_back(pulse != 0 ? 1.F : 0.F);
+    }
+    for (std::size_t bit = 0UZ; bit < bits; ++bit) {
+        const bool one = ((frame[bit / 8UZ] >> (7U - bit % 8UZ)) & 1U) != 0U;
+        slots.push_back(one ? 1.F : 0.F);
+        slots.push_back(one ? 0.F : 1.F);
+    }
+    slots.insert(slots.end(), trail, 0.F);
+
+    // the running mean over one slot of the grid; the sum is at most `kGrid` ones and the divisor a power of two, so
+    // every rendered value is an exact multiple of 1 / kGrid and two equal offsets render bit for bit alike
+    std::vector<float> mean(slots.size() * kGrid, 0.F);
+    float              running = 0.F;
+    for (std::size_t m = 0UZ; m < mean.size(); ++m) {
+        running += slots[m / kGrid];
+        if (m >= kGrid) {
+            running -= slots[(m - kGrid) / kGrid];
+        }
+        mean[m] = running / static_cast<float>(kGrid);
+    }
+
+    const auto                       shift   = static_cast<std::ptrdiff_t>(std::llround(static_cast<double>(tau) * static_cast<double>(kGrid)));
+    const std::complex<float>        carrier = std::polar(1.F, kCarrier);
+    std::vector<std::complex<float>> wave;
+    wave.reserve(slots.size());
+    for (std::size_t n = 0UZ; n < slots.size(); ++n) {
+        const std::ptrdiff_t at = static_cast<std::ptrdiff_t>((n + 1UZ) * kGrid) - shift - 1;
+        if (at < 0 || at >= static_cast<std::ptrdiff_t>(mean.size())) {
+            break;
+        }
+        wave.push_back(mean[static_cast<std::size_t>(at)] * carrier);
+    }
+    return wave;
+}
+
+/// @brief The eight sub-sample offsets a `phase_steps` of eight searches, which is the grid the renderer is swept on.
+[[nodiscard]] constexpr float offsetOf(std::size_t step) noexcept { return -0.5F + static_cast<float>(step) / 8.F; }
 
 } // namespace
 
@@ -362,7 +445,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         }
 
         // and the block over the same stream reports the same identity
-        PpmFramer    block  = make<PpmFramer>(modeSSettings());
+        MagFramer    block  = make<MagFramer>(modeSSettings());
         const Framed framed = feed(block, std::span<const float>(stream), 13UZ);
         expect(eq(framed.records.size(), 1UZ));
         expect(eq(framed.nominations, framed.admitted + framed.crcFailed + framed.shortFormat));
@@ -379,7 +462,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         append(stream, render(std::span<const std::uint8_t>(anchor)));
         appendZeros(stream, 37UZ);
 
-        PpmFramer    block = make<PpmFramer>(modeSSettings());
+        MagFramer    block = make<MagFramer>(modeSSettings());
         const Framed seen  = feed(block, std::span<const float>(stream), 13UZ, {}, 64UZ, false);
         expect(eq(seen.records.size(), 0UZ)) << "nothing is written where nothing is connected";
         expect(eq(seen.samples, stream.size()));
@@ -401,7 +484,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         }
         expect(eq(stream.size(), 72000UZ));
 
-        PpmFramer         block    = make<PpmFramer>(modeSSettings());
+        MagFramer         block    = make<MagFramer>(modeSSettings());
         const Framed      seen     = feed(block, std::span<const float>(stream), 0UZ, {}, 1UZ);
         const std::size_t capacity = 240UZ + (1UZ << 16U); // one window and the reserve, both fixed at start()
         expect(eq(seen.records.size(), 1UZ)) << "the sink had room for one";
@@ -464,14 +547,14 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         expect(eq(damaged.counters.crcFailed, 1ULL));
         expect(eq(damaged.counters.admitted, 0ULL));
 
-        PpmFramer    silent    = make<PpmFramer>(modeSSettings());
+        MagFramer    silent    = make<MagFramer>(modeSSettings());
         const Framed byDefault = feed(silent, std::span<const float>(flipped));
         expect(eq(byDefault.records.size(), 0UZ)) << "a frame the parity refuses is not a record";
         expect(eq(byDefault.crcFailed, 1ULL));
 
         gr::property_map unchecked  = modeSSettings();
         unchecked["emit_unchecked"] = true;
-        PpmFramer    loud           = make<PpmFramer>(unchecked);
+        MagFramer    loud           = make<MagFramer>(unchecked);
         const Framed published      = feed(loud, std::span<const float>(flipped));
         expect(eq(published.records.size(), 1UZ));
         if (published.records.size() == 1UZ) {
@@ -483,7 +566,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
 
         std::vector<float> blinded = render(std::span<const std::uint8_t>(anchor));
         blinded[7UZ]               = 0.F;
-        PpmFramer    stillSilent   = make<PpmFramer>(unchecked);
+        MagFramer    stillSilent   = make<MagFramer>(unchecked);
         const Framed nothing       = feed(stillSilent, std::span<const float>(blinded));
         expect(eq(nothing.records.size(), 0UZ)) << "emit_unchecked publishes refused parity, not an absent preamble";
         expect(eq(nothing.nominations, 0ULL));
@@ -539,7 +622,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         const std::vector<float>        stream  = padded(std::span<const std::uint8_t>(allCall));
         expect(eq(render(std::span<const std::uint8_t>(allCall)).size(), 16UZ + 112UZ)) << "a short frame is 56 bits over two slots each";
 
-        PpmFramer    quiet  = make<PpmFramer>(modeSSettings());
+        MagFramer    quiet  = make<MagFramer>(modeSSettings());
         const Framed silent = feed(quiet, std::span<const float>(stream));
         expect(eq(silent.records.size(), 0UZ));
         expect(eq(silent.shortFormat, 1ULL));
@@ -547,7 +630,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
 
         gr::property_map settings = modeSSettings();
         settings["emit_short"]    = true;
-        PpmFramer    loud         = make<PpmFramer>(settings);
+        MagFramer    loud         = make<MagFramer>(settings);
         const Framed shown        = feed(loud, std::span<const float>(stream));
         expect(eq(shown.records.size(), 1UZ));
         if (shown.records.size() == 1UZ) {
@@ -561,7 +644,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         // downlink format 4, whose parity is the CRC XORed with the aircraft address
         for (const std::uint64_t address : {0x4840D6ULL, 0xABCDEFULL}) {
             const std::vector<std::uint8_t> reply  = withParity({0x20U, 0x00U, 0x11U, 0x22U}, 7UZ, address);
-            PpmFramer                       framer = make<PpmFramer>(settings);
+            MagFramer                       framer = make<MagFramer>(settings);
             const Framed                    seen   = feed(framer, std::span<const float>(padded(std::span<const std::uint8_t>(reply))));
             expect(eq(seen.records.size(), 1UZ)) << std::format("address {:06X}", address);
             if (seen.records.size() == 1UZ) {
@@ -585,7 +668,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
             message[0UZ]                          = sample.lead;
             message[1UZ]                          = 0x5AU;
             const std::vector<std::uint8_t> frame = withParity(std::move(message), sample.octets);
-            PpmFramer                       block = make<PpmFramer>(settings);
+            MagFramer                       block = make<MagFramer>(settings);
             const Framed                    seen  = feed(block, std::span<const float>(padded(std::span<const std::uint8_t>(frame))));
             const auto                      at    = std::format("format {}", sample.format);
             expect(eq(seen.records.size(), 1UZ)) << at;
@@ -613,12 +696,12 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         }
 
         for (const float rate : {2.4e6F, 3.0e6F, 0.F}) {
-            PpmFramer block = PpmFramer(modeSSettings(rate));
+            MagFramer block = MagFramer(modeSSettings(rate));
             block.settings().init();
             std::ignore = block.settings().applyStagedParameters();
             expect(throws([&block] { block.start(); })) << std::format("{} Hz is not an even multiple of 1 MHz", rate);
         }
-        PpmFramer bare = PpmFramer({{"sample_rate", 2.0e6F}});
+        MagFramer bare = MagFramer({{"sample_rate", 2.0e6F}});
         bare.settings().init();
         std::ignore = bare.settings().applyStagedParameters();
         expect(throws([&bare] { bare.start(); })) << "profile is required and has no default";
@@ -634,7 +717,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
 
         const auto                 rateTag = [](std::size_t at, float rate) { return gr::Tag{at, gr::property_map{{gr::property_map::key_type(gr::tag::SAMPLE_RATE.shortKey()), gr::pmt::Value(rate)}}}; };
         const std::vector<gr::Tag> tags{rateTag(100UZ, 3.0e6F), rateTag(change, 4.0e6F)};
-        PpmFramer                  block = make<PpmFramer>(modeSSettings());
+        MagFramer                  block = make<MagFramer>(modeSSettings());
         const Framed               seen  = feed(block, std::span<const float>(stream), 64UZ, std::span<const gr::Tag>(tags));
         expect(eq(seen.rateRefused, 1ULL)) << "3 MS/s leaves the previous rate standing";
         expect(eq(seen.records.size(), 2UZ));
@@ -661,7 +744,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         expect(gt(atLow.counters.nominations, atDefault.counters.nominations)) << "a lower threshold nominates more often";
         expect(eq(atLow.counters.admitted, 0ULL));
 
-        PpmFramer    block = make<PpmFramer>(modeSSettings());
+        MagFramer    block = make<MagFramer>(modeSSettings());
         const Framed seen  = feed(block, std::span<const float>(noise), 65536UZ);
         expect(eq(seen.published, 0ULL));
         expect(eq(seen.nominations, atDefault.counters.nominations)) << "the block counts what the kernel nominated";
@@ -679,7 +762,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
             gr::Tag{20UZ + 4UZ, {{"preamble", std::string("kept")}}}, //
             gr::Tag{20UZ + 40UZ, {{"payload", std::string("kept")}}}, //
         };
-        PpmFramer    block = make<PpmFramer>(modeSSettings());
+        MagFramer    block = make<MagFramer>(modeSSettings());
         const Framed seen  = feed(block, std::span<const float>(stream), 32UZ, std::span<const gr::Tag>(tags));
         expect(eq(seen.records.size(), 1UZ));
         expect(eq(seen.tagsDropped, 1ULL)) << "the tag in the leading zeros belongs to no frame";
@@ -709,7 +792,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         appendZeros(stream, 37UZ);
         const std::vector<gr::Tag> tags{gr::Tag{5UZ, {{"before", std::string("dropped")}}}};
 
-        PpmFramer           block = make<PpmFramer>(modeSSettings());
+        MagFramer           block = make<MagFramer>(modeSSettings());
         std::vector<Record> scratch(64UZ);
         for (std::size_t base = 0UZ; base < stream.size();) {
             const std::size_t count = std::min(32UZ, stream.size() - base);
@@ -746,7 +829,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         }
 
         for (const int wait : {2, 6, 14}) {
-            PpmFramer         block = make<PpmFramer>(modeSSettings(6.0e6F));
+            MagFramer         block = make<MagFramer>(modeSSettings(6.0e6F));
             std::atomic<bool> scanning{false};
             std::atomic<bool> halt{false};
 
@@ -771,6 +854,148 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
             worker.join();
             expect(ge(block.nSamples, std::uint64_t{1UZ << 16U})) << std::format("the scan ran before the stop at {} ms", wait);
         }
+    };
+
+    "with one phase step the samples decide exactly what their magnitudes do"_test = [] {
+        const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
+        std::vector<float>              stream;
+        appendZeros(stream, 3UZ);
+        append(stream, render(std::span<const std::uint8_t>(anchor)));
+        appendZeros(stream, 37UZ);
+        const std::vector<std::complex<float>> samples = asIq(std::span<const float>(stream));
+
+        gr::property_map single = modeSSettings();
+        single["phase_steps"]   = gr::Size_t{1U};
+
+        MagFramer    mag   = make<MagFramer>(modeSSettings());
+        const Framed byMag = feed(mag, std::span<const float>(stream), 13UZ);
+        IqFramer     iq    = make<IqFramer>(single);
+        const Framed byIq  = feed(iq, std::span<const std::complex<float>>(samples), 13UZ);
+
+        expect(eq(byIq.records.size(), byMag.records.size()));
+        expect(eq(byIq.records.size(), 1UZ));
+        expect(eq(byIq.candidates, byIq.nominations)) << "with no fine step to refuse a candidate, every candidate is a nomination";
+        expect(eq(byIq.nominations, byMag.nominations));
+        expect(eq(byIq.admitted, byMag.admitted));
+        expect(eq(byIq.samples, byMag.samples));
+        expect(eq(byIq.tailDropped, byMag.tailDropped)) << "one phase step leaves the kernel the window it had before there was a fine step";
+        expect(eq(byIq.held, byMag.held));
+        if (byIq.records.size() != 1UZ || byMag.records.size() != 1UZ) {
+            return;
+        }
+        expect(that % (byIq.records[0UZ].signal_values == byMag.records[0UZ].signal_values));
+        expect(eq(metaU64(byIq.records[0UZ], "sample_start"), metaU64(byMag.records[0UZ], "sample_start")));
+        expect(eq(metaFloat(byIq.records[0UZ], "preamble_strong"), metaFloat(byMag.records[0UZ], "preamble_strong")));
+        expect(eq(metaFloat(byIq.records[0UZ], "sample_phase"), 0.F)) << "no offset was searched, so none is reported";
+        expect(eq(metaFloat(byMag.records[0UZ], "sample_phase"), 0.F)) << "a magnitude stream carries nothing to align to";
+    };
+
+    "a frame that falls between two samples"_test = [] {
+        // Without the fine step a frame is decided where the samples put it. At one sample a slot a pulse offset by
+        // tau spills |tau| of itself into the slot behind it, and that slot is the shape test's own denominator, so
+        // the ratio the nomination is made on falls to (1 - |tau|) / |tau| and a threshold of two keeps the offsets
+        // out to a quarter of a sample and no further.
+        constexpr std::array<bool, 8UZ> kPlainAdmits{false, false, true, true, true, true, true, false};
+
+        const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
+        std::array<bool, 8UZ>           plain{};
+        std::array<bool, 8UZ>           fine{};
+
+        for (std::size_t step = 0UZ; step < 8UZ; ++step) {
+            const float                            tau     = offsetOf(step);
+            const std::vector<std::complex<float>> samples = renderIq(std::span<const std::uint8_t>(anchor), tau);
+            for (const gr::Size_t steps : {gr::Size_t{1U}, gr::Size_t{8U}}) {
+                const auto       at      = std::format("offset {:+.3f} at {} phase steps", tau, steps);
+                gr::property_map setting = modeSSettings();
+                setting["phase_steps"]   = steps;
+                IqFramer     block       = make<IqFramer>(setting);
+                const Framed seen        = feed(block, std::span<const std::complex<float>>(samples), 97UZ);
+
+                (steps == 1U ? plain : fine)[step] = seen.records.size() == 1UZ;
+                expect(ge(seen.candidates, seen.nominations)) << at << ": a nomination is a candidate the fine step kept";
+                if (steps == 1U) {
+                    expect(eq(seen.candidates, seen.nominations)) << at;
+                }
+                expect(le(seen.records.size(), 1UZ)) << at << ": one frame was rendered";
+                for (const Record& record : seen.records) {
+                    expect(that % (record.signal_values == anchor)) << at;
+                    expect(eq(metaFloat(record, "sample_rate"), 2.0e6F)) << at;
+                    const float phase = metaFloat(record, "sample_phase");
+                    expect(ge(phase, -0.5F)) << at;
+                    expect(lt(phase, 0.5F)) << at;
+                    if (steps == 1U) {
+                        expect(eq(phase, 0.F)) << at << ": one step is the integer position itself";
+                    }
+                    // the burst's first data sample sits at `kLead + 16 + tau`, and the record's timing is the
+                    // integer start plus the offset, never the integer start alone
+                    const float timing = static_cast<float>(metaU64(record, "sample_start")) + phase;
+                    expect(lt(std::abs(timing - (static_cast<float>(kLead + 16UZ) + tau)), 0.5F)) << at << ": sample_start plus sample_phase is where the frame is";
+                }
+            }
+        }
+
+        const auto listed = [](const std::array<bool, 8UZ>& set) {
+            std::string text;
+            for (std::size_t step = 0UZ; step < set.size(); ++step) {
+                if (set[step]) {
+                    std::format_to(std::back_inserter(text), "{}{:+.3f}", text.empty() ? "" : " ", offsetOf(step));
+                }
+            }
+            return text.empty() ? std::string("none") : text;
+        };
+        std::println("[record] one sample a slot, offsets admitted: at one phase step {}; at eight {}", listed(plain), listed(fine));
+        expect(that % (plain == kPlainAdmits)) << std::format("the integer decision admitted {}", listed(plain));
+        for (std::size_t step = 0UZ; step < 8UZ; ++step) {
+            expect(!plain[step] || fine[step]) << std::format("the fine step refused offset {:+.3f}, which the integer decision kept", offsetOf(step));
+        }
+    };
+
+    "the tail, a tag and the buffer's bound hold on the complex instantiation"_test = [] {
+        const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
+        std::vector<float>              stream;
+        appendZeros(stream, 20UZ);
+        append(stream, render(std::span<const std::uint8_t>(anchor)));
+        appendZeros(stream, 37UZ);
+        const std::vector<std::complex<float>> samples = asIq(std::span<const float>(stream));
+        const std::vector<gr::Tag>             tags{
+            gr::Tag{5UZ, {{"before", std::string("dropped")}}},       //
+            gr::Tag{20UZ + 40UZ, {{"payload", std::string("kept")}}}, //
+        };
+
+        gr::property_map single = modeSSettings();
+        single["phase_steps"]   = gr::Size_t{1U};
+        IqFramer     block      = make<IqFramer>(single);
+        const Framed seen       = feed(block, std::span<const std::complex<float>>(samples), 32UZ, std::span<const gr::Tag>(tags));
+        expect(eq(seen.records.size(), 1UZ));
+        expect(eq(seen.tailDropped, std::uint64_t{37})) << "the positions whose window never completed are dropped and counted";
+        expect(eq(seen.tagsDropped, 1ULL)) << "the tag in the leading zeros belongs to no frame";
+        if (seen.records.size() == 1UZ) {
+            const auto& events = seen.records[0UZ].timing_events.at(0UZ);
+            expect(eq(events.size(), 1UZ));
+            if (events.size() == 1UZ) {
+                expect(eq(events[0UZ].first, std::ptrdiff_t{24}));
+                expect(events[0UZ].second.contains(gr::property_map::key_type("payload")));
+            }
+        }
+
+        // three hundred anchors end to end with one record of room a call: the sink saturates on the first frame and
+        // the buffer would grow with the stream if nothing bounded it, and the magnitudes beside it with the buffer
+        const std::vector<float> one = render(std::span<const std::uint8_t>(anchor));
+        std::vector<float>       many;
+        for (std::size_t k = 0UZ; k < 300UZ; ++k) {
+            append(many, std::span<const float>(one));
+        }
+        const std::vector<std::complex<float>> loud = asIq(std::span<const float>(many));
+
+        IqFramer          bounded  = make<IqFramer>(modeSSettings());
+        const Framed      capped   = feed(bounded, std::span<const std::complex<float>>(loud), 0UZ, {}, 1UZ);
+        const std::size_t capacity = bounded._scanner.phasedWindowSamples() + (1UZ << 16U);
+        expect(eq(capped.records.size(), 1UZ)) << "the sink had room for one";
+        expect(eq(capped.samples, std::uint64_t{loud.size()}));
+        expect(le(capped.held, capacity)) << "the buffer holds one window and its reserve, and no more of the stream";
+        expect(eq(capped.held, bounded._mags.size())) << "the samples and their magnitudes are trimmed together";
+        expect(gt(capped.overrunDropped, 0ULL)) << "the samples past the bound are dropped and counted";
+        expect(le(capped.overrunDropped + std::uint64_t{capped.held}, std::uint64_t{loud.size()})) << "nothing is counted dropped twice, and nothing both held and dropped";
     };
 };
 
