@@ -176,7 +176,7 @@ Requirements:
   of 10 September 2026, together with the parts of this receiver that are not merged there yet: the
   pulse-position framing scanner in the library, the `PpmFramer` block in the blocks project's
   digital family, and that project's `adsb` family, `ModeSDecode` and `AdsbPrinter`. The willcode
-  forks carry them as the leading commits of `restack/modem-20260910`, to be filed as pull requests
+  forks carry them as the leading commits of `rework`, to be filed as pull requests
   against GNU Radio 4.
 - **The SDR family**, for live devices. The blocks project builds and exports `gnuradio4::gr-sdr`
   only when `GR4_ENABLE_SDR` is on, and that is off by default. Without it this package still
