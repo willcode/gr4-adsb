@@ -1,6 +1,6 @@
-# gr4-adsb — an ADS-B receiver as a GNU Radio 4 out-of-tree module
+# gr4-adsb — an ADS-B receiver on GNU Radio 4
 
-A 1090 MHz Mode S / ADS-B receiver: a block library and one console application that runs it. It
+A 1090 MHz Mode S / ADS-B receiver: one console application over GNU Radio 4's own blocks. It
 decodes the extended squitter — aircraft identification, barometric altitude, position and
 velocity — and prints one line per frame.
 
@@ -17,8 +17,8 @@ earlier frame from that address has given one.
 
 ## Quick start
 
-The module builds against an installed GNU Radio 4; see [Building](#building) for what that has to
-include.
+The package builds against an installed GNU Radio 4; see [Building](#building) for what that has
+to include.
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -58,25 +58,25 @@ device whose default filter is narrower than the pulses, the analog bandwidth (s
   source, file:  BasicFileSource<int16_t> ──► InterleavedToComplex
 ```
 
-**`PpmFramer`** (this module) reads frames out of the sample stream. Pulse-position modulation puts
-one pulse per bit period, in the first half for a one and the second for a zero, so a bit is decided
-by comparing the two halves of one period against each other: there is no carrier to acquire and no
+**`PpmFramer`** reads frames out of the sample stream. Pulse-position modulation puts one pulse
+per bit period, in the first half for a one and the second for a zero, so a bit is decided by
+comparing the two halves of one period against each other: there is no carrier to acquire and no
 clock to recover. The framer nominates a position wherever the preamble's four pulses stand out
-from the gaps by at least `--threshold`, reads the frame there, and checks the 24-bit parity. Only a
-frame whose parity checks consumes its own window; every other nomination advances the search by one
-sample, so a false nomination cannot hide a real frame behind it.
+from the gaps by at least `--threshold`, reads the frame there, and checks the 24-bit parity. Only
+a frame whose parity checks consumes its own window; every other nomination advances the search by
+one sample, so a false nomination cannot hide a real frame behind it.
 
-**`ModeSDecode`** (this module) reads the downlink message into typed metadata and leaves the
-frame's octets as the payload, so nothing the frame said is lost. **`AdsbPrinter`** (this module)
-renders one line of text per record and publishes it as a record of its own. **`ConsoleSink`** lives
-in `app/` and writes those lines to stdout; it is the only block in the chain that assumes a
-console.
+**`ModeSDecode`** reads the downlink message into typed metadata and leaves the frame's octets as
+the payload, so nothing the frame said is lost. **`AdsbPrinter`** renders one line of text per
+record and publishes it as a record of its own. Those three are GNU Radio 4's own blocks, from its
+digital and adsb families. **`ConsoleSink`** is defined in `app/` and writes the lines to stdout;
+it is the only block this package supplies and the only one in the chain that assumes a console.
 
-**The sample rate must be an even integer multiple of 1 MHz.** A Mode S slot is half a microsecond,
-so the rate has to make a slot a whole number of samples. The framer refuses any other rate rather
-than resampling silently: 2, 4, 6 and 8 MS/s are all fine, 2.4 MS/s is not. Higher is better here,
-and 2 MS/s is a weak floor — expect fewer frames and many more parity failures than at 4 or 6 MS/s
-from the same antenna. An RTL-SDR tops out below 4 MS/s, so 2 MS/s is its only rate.
+**The sample rate must be an even integer multiple of 1 MHz.** A Mode S slot is half a
+microsecond, so the rate has to make a slot a whole number of samples. The framer refuses any other
+rate rather than resampling silently: 2, 4, 6 and 8 MS/s are all fine, 2.4 MS/s is not. Higher is
+better here, and 2 MS/s is a weak floor — expect fewer frames and many more parity failures than at
+4 or 6 MS/s from the same antenna. An RTL-SDR tops out below 4 MS/s, so 2 MS/s is its only rate.
 
 **The framer decides each position at the sub-sample phase of its preamble.** A burst does not
 arrive on the sample clock, and a pulse that straddles two samples splits its energy between a pulse
@@ -120,7 +120,7 @@ block wants, so a bare `--device hackrf` works too.
 | `--phase-steps N` | 8 | offsets per candidate; 1 turns the search off |
 | `--coarse-ratio R` | 0.5 | share of the threshold for the integer test |
 | `--seconds N` | 0 | stop after N seconds; 0 runs to the end |
-| `--verbose` | off | list the block library's registry keys, then run |
+| `--verbose` | off | list GNU Radio 4's registry keys, then run |
 | `--plugin-dir DIR` | built in | where `--verbose` loads from |
 
 Exit codes are 0 on a clean stop, 2 on a bad command line and 1 on a graph error, each with the
@@ -157,130 +157,58 @@ nearby aircraft is heard. `--gain` is SoapySDR's overall gain and the HackRF dri
 across the amplifier, the LNA and the VGA; around 90 dB is a good point at 4 MS/s, and 110 dB
 overloads the front end. Leave `--bandwidth` to the driver unless a measurement says otherwise.
 
-**`--verbose` loads the module's block library through `gr::PluginLoader` before the run and prints
-the registry keys it adds.** The chain itself never uses the registry, so the keys printed are
-exactly what the library brought. The rest of the run is unchanged.
-
-```
-$ ./build/app/adsb --verbose --file capture.cs16 --rate 2e6
-adsb: plugin directory .../build/blocks
-adsb: loaded .../build/blocks/libGr4AdsbBlocksShared.so (8 registrations)
-adsb: the registry gained 4 keys:
-adsb:   gr4adsb::AdsbPrinter
-adsb:   gr4adsb::ModeSDecode
-adsb:   gr4adsb::PpmFramer<complex<float32>>
-adsb:   gr4adsb::PpmFramer<float32>
-```
-
-Each block is entered under its type name and under its alias, which for these blocks is the same
-string, so eight registrations leave four keys. `--plugin-dir` overrides the directory; its default
-is the one belonging to the running executable, the build tree's for a binary in the build tree and
-`<prefix>/lib/gnuradio-4/plugins` for an installed one.
+**`--verbose` opens every shared block library in the plugin directory through `gr::PluginLoader`
+and prints the registry keys they add.** It names each library and how many registrations it
+carries, then lists the keys, sorted; among them are
+`gr::blocks::digital::PpmFramer<complex<float32>>`, `gr::blocks::adsb::ModeSDecode` and
+`gr::blocks::adsb::AdsbPrinter`, the three blocks this chain builds directly. Each block is entered
+under its type name and under its alias, so a library adds fewer keys than it reports
+registrations. The chain itself never uses the registry, so the keys printed are exactly what the
+libraries brought, and the rest of the run is unchanged. `--plugin-dir` overrides the directory; its
+default is the plugin directory of the GNU Radio 4 this build was configured against,
+`<prefix>/lib/gnuradio-4/plugins` or `lib64` on a distribution that puts libraries there.
 
 ## Building
 
 Requirements:
 
-- **GNU Radio 4**, installed into one prefix. Built and tested against the `main` branches of GNU
-  Radio 4 core, library and blocks as of 9 September 2026.
-- **The SDR family**, for live devices. The blocks project installs
-  `gnuradio-4.0/sdr/SoapySource.hpp` only when its SDR family is enabled, and that family is off by
-  default. Without it this module still configures and builds, and `adsb` offers `--file` alone. The
-  configure line says which of the two this build got.
+- **GNU Radio 4**, installed into one prefix. Core, library and blocks at their `main` branches as
+  of 10 September 2026, together with the parts of this receiver that are not merged there yet: the
+  pulse-position framing scanner in the library, the `PpmFramer` block in the blocks project's
+  digital family, and that project's `adsb` family, `ModeSDecode` and `AdsbPrinter`. The willcode
+  forks carry them as the leading commits of `restack/modem-20260910`, to be filed as pull requests
+  against GNU Radio 4.
+- **The SDR family**, for live devices. The blocks project builds and exports `gnuradio4::gr-sdr`
+  only when `GR4_ENABLE_SDR` is on, and that is off by default. Without it this package still
+  configures and builds, and `adsb` offers `--file` alone. The configure line says which of the two
+  this build got.
 - **SoapySDR** and a driver for the radio, again only for live devices.
-- **Boost.UT**, only to build the tests. It is not part of GNU Radio 4; point
-  `-DGR4ADSB_BOOST_UT_INCLUDE_DIR` at its include directory if it is not already findable.
-
-A GNU Radio 4 blocks tree from before September 2026 needs one allowance and has one limitation.
-`SoapySource.hpp` there includes a compatibility header the family does not install, so this
-module's build supplies exactly that one header from a directory of its own, leaving every other
-`gnuradio-4.0` header to come from the prefix; the shim is gated on the file being absent and says
-so at configure time. And `SoapySource` there drops a whole 8192-sample chunk whenever the graph
-below it stops taking samples, about 2 ms of air at 4 MS/s, which costs frames. Nothing here works
-around the second.
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=<gnuradio4-prefix> \
       -DCMAKE_INSTALL_PREFIX=<install-prefix>
 cmake --build build
-ctest --test-dir build --output-on-failure
 cmake --install build
 ```
 
-`-DGR4ADSB_ENABLE_TESTING=OFF` skips the tests and `-DGR4ADSB_WARNINGS_AS_ERRORS=OFF` relaxes
-`-Werror`. The three tests exercise the blocks directly, without a registry or a plugin:
-`qa_PpmFramer` frames rendered bursts and checks the positions, the sub-sample offsets and the
-buffer bounds; `qa_ModeSDecode` decodes known messages of each downlink format; `qa_AdsbPrinter`
-checks the rendered lines. The install writes `adsb` to `<prefix>/bin`, the block library to
-`<prefix>/lib/gnuradio-4/plugins` and the headers to `<prefix>/include/gr4adsb`.
+`-DGR4ADSB_WARNINGS_AS_ERRORS=OFF` relaxes `-Werror`. The install writes `adsb` to `<prefix>/bin`
+and nothing else; the blocks the chain is built from are installed with GNU Radio 4.
 
-## Module layout
+The package ships no test. What a test of this receiver would exercise — the framing, the message
+decode and the rendering of a line — is tested in GNU Radio 4 beside each of those blocks, and what
+is left here is the application and `ConsoleSink`. A replay over a recorded capture is how a build
+is checked end to end, and a capture large enough to carry frames is too large to ship.
 
-`lib/` holds the code that is not a block: the PPM framing scanner, the parameterized CRC the Mode S
-parity is one instance of, the MMSE interpolator the framer's phase search reads through, and the
-filter design and window that build its tap bank. Each sits under `lib/include/gr4adsb/algorithm/`
-at the path it would take in GNU Radio 4's own library, because that is where each would be added.
+## Layout
 
-`blocks/` holds the blocks: `PpmFramer`, which wraps the scanner, and `ModeSDecode` and
-`AdsbPrinter`, the message layer above it. `app/` holds the application and `ConsoleSink`. What
-decides which side of the `lib`/`blocks` line a file belongs on is whether it came from the common
-library or would be added to it; code specific to one block stays with that block.
+`app/` holds the whole package: `adsb.cpp`, which is the application and `ConsoleSink` together.
+Everything else in the chain belongs to GNU Radio 4 and is used as installed.
 
-`blocks/CMakeLists.txt` calls `gr_add_block_library` from GNU Radio 4's `GnuRadioBlockLib` package,
-which is the supported way to register blocks out of tree. It runs the registration generator over
-the three headers that carry `GR_REGISTER_BLOCK` and produces `libGr4AdsbBlocksShared.so`, which a
-plugin loader opens, and `libGr4AdsbBlocksStatic.a`, which a consumer links instead. Both are
-installed under `<prefix>/lib/gnuradio-4/plugins`; the directory follows `CMAKE_INSTALL_LIBDIR`, so
-it is `lib64` on a distribution that puts libraries there.
-
-A consumer that links either form calls `gr::blocklib::initGr4AdsbBlocks(registry)`, declared in the
-generated `<gnuradio-4.0/Gr4AdsbBlocks.hpp>`, to register the blocks. Explicit initialization is the
-contract for a linked library: a shared library nothing references is not recorded in `DT_NEEDED`
-under the linker's default `--as-needed`, so registration through static initializers is not
-portable there. A library that is opened rather than linked does register from its static
-initializers as it loads, which is what `--verbose` reports.
-
-`adsb` links neither form. It names every block type and uses `emplaceBlock<T>`, the direct,
-statically checked route, which is what a program that knows its own chain needs. The registry is
-for a program that does not: one building a graph from a saved description, or loading the shared
-object as a plugin.
-
-**The plugin ABI is versioned and the loader demands an exact match**, so rebuild this module
-against whatever GNU Radio 4 it is going to be loaded into.
-
-### Carried files
-
-Most of the chain is GNU Radio 4's own and is used as installed. These files are carried into this
-repository because they are not in a GNU Radio 4 release yet. They come from the `rework` branches
-of [gnuradio4-blocks](https://github.com/willcode/gnuradio4-blocks) and
-[gnuradio4-library](https://github.com/willcode/gnuradio4-library).
-
-| Carried into | Taken from |
-|---|---|
-| `lib/…/algorithm/digital/Crc.hpp` | library `algorithm/digital/Crc.hpp` |
-| `lib/…/algorithm/digital/Ppm.hpp` | library `algorithm/digital/Ppm.hpp` |
-| `lib/…/algorithm/sync/MmseInterpolator.hpp` | library `algorithm/sync/…` |
-| `lib/…/algorithm/filter/FilterDesign.hpp` | library `algorithm/filter/…` |
-| `lib/…/algorithm/fourier/window.hpp` | library `algorithm/fourier/…` |
-| `blocks/digital/…/PpmFramer.hpp` | blocks `blocks/digital/PpmFramer.hpp` |
-| `blocks/adsb/…/ModeS.hpp` | blocks `blocks/adsb/ModeS.hpp` |
-| `blocks/adsb/…/AdsbPrinter.hpp` | blocks `blocks/adsb/AdsbPrinter.hpp` |
-| `blocks/test/qa_PpmFramer.cpp` | blocks `blocks/digital/test/…` |
-| `blocks/test/qa_ModeSDecode.cpp` | blocks `blocks/adsb/test/…` |
-| `blocks/test/qa_AdsbPrinter.cpp` | blocks `blocks/adsb/test/…` |
-| `blocks/test/TestSpans.hpp` | blocks `blocks/digital/test/TestSpans.hpp` |
-
-`window.hpp` is carried although GNU Radio 4 installs a window header of its own, because the
-installed one stops at Kaiser and the filter design here names Bartlett, Welch and Parzen. All the
-carried files keep their contract comments and their tests.
-
-Everything sits in the `gr4adsb` namespace, the blocks under the `gr4adsb/…` include path and the
-algorithm headers under `gr4adsb/algorithm/…`, so nothing here collides with an installed GNU Radio.
-The three interpolation headers keep their own sub-namespaces under that name, `gr4adsb::sync`,
-`gr4adsb::filter::design` and `gr4adsb::algorithm::window`, so they sit beside GNU Radio 4's copies
-of the same code rather than over them. If these blocks land in GNU Radio 4 itself, this module
-shrinks to the application.
+`adsb` names every block type and builds its chain with `emplaceBlock<T>`, the direct, statically
+checked route, which is what a program that knows its own chain needs. The registry is for a
+program that does not: one building a graph from a saved description, or loading a block library as
+a plugin. `--verbose` is the only place this application opens one.
 
 ## Next
 
