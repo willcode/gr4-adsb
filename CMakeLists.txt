@@ -12,24 +12,20 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 include(GNUInstallDirs)
 
-option(GR4ADSB_ENABLE_TESTING "Build the block tests" ON)
 option(GR4ADSB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
-# gnuradio4      core: Block, Graph, Scheduler, DataSet, the block registry
-# gnuradio4Library    the algorithm headers the SDR and file blocks pull in
-# gnuradio4Blocks     the GNU Radio 4 block families the application's chain uses
-# GnuRadioBlockLib    gr_add_block_library, the registration generator this module registers through
+# gnuradio4         core: Block, Graph, Scheduler, DataSet, the block registry and the plugin loader
+# gnuradio4Library  the algorithm headers the block families pull in
+# gnuradio4Blocks   the families the chain is built from: digital, adsb, basic, fileio, and sdr for a live device
 find_package(gnuradio4 CONFIG REQUIRED)
 find_package(gnuradio4Library CONFIG REQUIRED)
 find_package(gnuradio4Blocks CONFIG REQUIRED)
-find_package(GnuRadioBlockLib CONFIG REQUIRED)
 
 # The installed gnuradio4::gnuradio-options keeps its warning flags behind $<BUILD_INTERFACE:...>, so they do not
-# reach a consuming project. gr_add_block_library links a target literally named `gnuradio-options` into the object
-# library it creates when one exists, so that is the name this project's own flags go on.
-add_library(gnuradio-options INTERFACE)
+# reach a consuming project; this is the set the application is compiled with instead.
+add_library(gr4adsb-options INTERFACE)
 target_compile_options(
-  gnuradio-options
+  gr4adsb-options
   INTERFACE -Wall
             -Wextra
             -Wpedantic
@@ -54,13 +50,6 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
-if(GR4ADSB_ENABLE_TESTING)
-  include(CTest)
-  enable_testing()
-endif()
-
-# lib/ holds the code that is not a block: algorithm headers that would live in gnuradio4-library. blocks/ holds the
-# blocks themselves, and app/ the application that runs them.
-add_subdirectory(lib)
-add_subdirectory(blocks)
+# app/ holds the whole package: the application and the ConsoleSink it ends its chain with. Every other block in the
+# chain is GNU Radio 4's own and is used as installed.
 add_subdirectory(app)

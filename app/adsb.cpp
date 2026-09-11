@@ -3,8 +3,8 @@
 // Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
 // File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
 //
-// SoapySource, BasicFileSource and InterleavedToComplex come from GNU Radio 4. PpmFramer, ModeSDecode and AdsbPrinter
-// come from this module. ConsoleSink is defined below; it is the only block in the chain that assumes a terminal.
+// Every block in the chain but the last comes from GNU Radio 4 and is used as installed. ConsoleSink is defined
+// below; it is the only block in the chain that assumes a terminal.
 //
 // The framer takes complex samples rather than magnitudes: its sub-sample phase search interpolates the signal, and
 // a magnitude stream does not carry what the interpolation reads.
@@ -26,7 +26,6 @@
 #include <print>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -36,12 +35,11 @@
 #include <gnuradio-4.0/PluginLoader.hpp>
 #include <gnuradio-4.0/Scheduler.hpp>
 
+#include <gnuradio-4.0/adsb/AdsbPrinter.hpp>
+#include <gnuradio-4.0/adsb/ModeS.hpp>
 #include <gnuradio-4.0/basic/ConverterBlocks.hpp>
+#include <gnuradio-4.0/digital/PpmFramer.hpp>
 #include <gnuradio-4.0/fileio/BasicFileIo.hpp>
-
-#include <gr4adsb/adsb/AdsbPrinter.hpp>
-#include <gr4adsb/adsb/ModeS.hpp>
-#include <gr4adsb/digital/PpmFramer.hpp>
 
 #ifdef GR4ADSB_HAVE_SOAPY
 #include <gnuradio-4.0/sdr/SoapySource.hpp>
@@ -97,8 +95,8 @@ struct Options {
     std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
     bool                  agc = false; ///< ask for the device's own automatic gain control
 
-    bool        verbose = false; ///< load the module's block library and print the registry keys it adds
-    std::string pluginDir{};     ///< directory --verbose loads from; `parse` fills in the default
+    bool        verbose = false; ///< load the SDK's block libraries and print the registry keys they add
+    std::string pluginDir{};     ///< directory --verbose loads from; `parse` fills in the SDK's own
 };
 
 void usage() {
@@ -114,8 +112,8 @@ void usage() {
     std::println(stderr, "  --phase-steps N  sub-sample offsets each candidate is re-tested at; 1 turns the fine step off (default 8)");
     std::println(stderr, "  --coarse-ratio R share of the threshold the integer-position test admits a candidate at, in (0, 1] (default 0.5)");
     std::println(stderr, "  --seconds N      stop after N seconds");
-    std::println(stderr, "  --verbose        load the module's block library and print the registry keys it adds, then run");
-    std::println(stderr, "  --plugin-dir DIR directory --verbose loads from (default: this build's own plugin directory)");
+    std::println(stderr, "  --verbose        load the SDK's block libraries and print the registry keys they add, then run");
+    std::println(stderr, "  --plugin-dir DIR directory --verbose loads from (default: the SDK's plugin directory)");
 }
 
 /// @brief @p text as a number, and nothing unless the whole string is one: "4e6x" is refused, not read as 4e6.
@@ -154,37 +152,6 @@ void usage() {
         return {std::string(spec), std::string{}};
     }
     return {driver, rest};
-}
-
-/// @brief The directory the running executable is in, or nothing when that cannot be told.
-[[nodiscard]] std::optional<std::filesystem::path> executableDirectory(const char* argv0) {
-    std::error_code ec;
-    if (const std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", ec); !ec) {
-        return self.parent_path();
-    }
-    if (argv0 == nullptr) {
-        return std::nullopt;
-    }
-    const std::filesystem::path fromArgv = std::filesystem::weakly_canonical(argv0, ec);
-    return ec ? std::nullopt : std::optional<std::filesystem::path>(fromArgv.parent_path());
-}
-
-/// @brief The plugin directory for the running executable.
-///
-/// The build writes the shared block library into the build tree and `cmake --install` writes a second copy under the
-/// install prefix. Both paths are compiled in, and the executable's own directory selects between them: loading both
-/// would open two copies of the same library and register its blocks twice. `--plugin-dir` overrides the selection,
-/// which is what an install moved away from its configured prefix needs.
-[[nodiscard]] std::string defaultPluginDirectory(const char* argv0) {
-    const std::string_view                     build = GR4ADSB_BUILD_PLUGIN_DIR;
-    const std::optional<std::filesystem::path> here  = executableDirectory(argv0);
-    if (!build.empty() && here.has_value()) {
-        std::error_code ec;
-        if (std::filesystem::equivalent(*here, GR4ADSB_BUILD_APP_DIR, ec) && !ec) {
-            return std::string(build);
-        }
-    }
-    return std::string(GR4ADSB_INSTALL_PLUGIN_DIR);
 }
 
 /// @brief The command line, or nothing when it is not usable. Everything it refuses is reported here.
@@ -258,7 +225,7 @@ void usage() {
         return std::nullopt;
     }
     // the rate rule belongs to the framer and is asked of it, so the application cannot disagree with the block
-    if (gr4adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
+    if (gr::blocks::digital::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
         std::println(stderr, "adsb: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
         return std::nullopt;
     }
@@ -279,18 +246,18 @@ void usage() {
         return std::nullopt;
     }
     if (options.pluginDir.empty()) {
-        options.pluginDir = defaultPluginDirectory(argc > 0 ? argv[0] : nullptr);
+        options.pluginDir = GR4ADSB_SDK_PLUGIN_DIR;
     }
     return options;
 }
 
 /// @brief Load the shared block libraries in @p directory and print the registry keys they add.
 ///
-/// The chain below uses `emplaceBlock<T>` and does not need the registry, so no block of this module is registered
-/// when this runs and every key printed came from a loaded library. Those keys are the names a graph built from a
-/// saved description would use.
+/// The chain below uses `emplaceBlock<T>` and does not need the registry, so nothing is registered when this runs and
+/// every key printed came from a loaded library. Those keys are the names a graph built from a saved description
+/// would use, the three this chain names among them.
 ///
-/// The loader is destroyed when this function returns; the library it opened stays mapped. `gr::PluginLoader` keeps a
+/// The loader is destroyed when this function returns; the libraries it opened stay mapped. `gr::PluginLoader` keeps a
 /// shared object that registered blocks from its static initializers mapped for the life of the process, because the
 /// registry then holds factory pointers into that object's code.
 void reportPlugins(const std::string& directory) {
@@ -344,15 +311,15 @@ int main(int argc, char** argv) {
     }
 
     gr::Graph flow;
-    auto&     framer  = flow.emplaceBlock<gr4adsb::PpmFramer<std::complex<float>>>({
+    auto&     framer  = flow.emplaceBlock<gr::blocks::digital::PpmFramer<std::complex<float>>>({
         {"sample_rate", options.rate},
         {"profile", std::string("mode_s")},
         {"threshold", options.threshold},
         {"phase_steps", static_cast<gr::Size_t>(options.phaseSteps)},
         {"coarse_ratio", options.coarseRatio},
     });
-    auto&     decoder = flow.emplaceBlock<gr4adsb::ModeSDecode>();
-    auto&     printer = flow.emplaceBlock<gr4adsb::AdsbPrinter>();
+    auto&     decoder = flow.emplaceBlock<gr::blocks::adsb::ModeSDecode>();
+    auto&     printer = flow.emplaceBlock<gr::blocks::adsb::AdsbPrinter>();
     auto&     console = flow.emplaceBlock<ConsoleSink>();
 
     bool wired = true;
