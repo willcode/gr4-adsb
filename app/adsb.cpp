@@ -37,8 +37,8 @@
 
 #include <gnuradio-4.0/adsb/AdsbPrinter.hpp>
 #include <gnuradio-4.0/adsb/ModeS.hpp>
+#include <gnuradio-4.0/adsb/PpmFramer.hpp>
 #include <gnuradio-4.0/basic/ConverterBlocks.hpp>
-#include <gnuradio-4.0/digital/PpmFramer.hpp>
 #include <gnuradio-4.0/fileio/BasicFileIo.hpp>
 
 #ifdef GR4ADSB_HAVE_SOAPY
@@ -225,7 +225,7 @@ void usage() {
         return std::nullopt;
     }
     // the rate rule belongs to the framer and is asked of it, so the application cannot disagree with the block
-    if (gr::blocks::digital::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
+    if (gr::blocks::adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
         std::println(stderr, "adsb: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
         return std::nullopt;
     }
@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
     }
 
     gr::Graph flow;
-    auto&     framer  = flow.emplaceBlock<gr::blocks::digital::PpmFramer<std::complex<float>>>({
+    auto&     framer  = flow.emplaceBlock<gr::blocks::adsb::PpmFramer<std::complex<float>>>({
         {"sample_rate", options.rate},
         {"profile", std::string("mode_s")},
         {"threshold", options.threshold},

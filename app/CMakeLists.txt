@@ -5,8 +5,7 @@ add_executable(adsb adsb.cpp)
 # uses the process-wide block and scheduler registries; those are defined in gnuradio-blocklib-core.
 target_link_libraries(
   adsb
-  PRIVATE gnuradio4::gr-digital
-          gnuradio4::gr-adsb
+  PRIVATE gnuradio4::gr-adsb
           gnuradio4::gr-basic
           gnuradio4::gr-fileio
           gnuradio4::gnuradio-blocklib-core

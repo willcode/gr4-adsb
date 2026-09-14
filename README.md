@@ -69,7 +69,7 @@ one sample, so a false nomination cannot hide a real frame behind it.
 **`ModeSDecode`** reads the downlink message into typed metadata and leaves the frame's octets as
 the payload, so nothing the frame said is lost. **`AdsbPrinter`** renders one line of text per
 record and publishes it as a record of its own. Those three are GNU Radio 4's own blocks, from its
-digital and adsb families. **`ConsoleSink`** is defined in `app/` and writes the lines to stdout;
+adsb family. **`ConsoleSink`** is defined in `app/` and writes the lines to stdout;
 it is the only block this package supplies and the only one in the chain that assumes a console.
 
 **The sample rate must be an even integer multiple of 1 MHz.** A Mode S slot is half a
@@ -160,7 +160,7 @@ overloads the front end. Leave `--bandwidth` to the driver unless a measurement 
 **`--verbose` opens every shared block library in the plugin directory through `gr::PluginLoader`
 and prints the registry keys they add.** It names each library and how many registrations it
 carries, then lists the keys, sorted; among them are
-`gr::blocks::digital::PpmFramer<complex<float32>>`, `gr::blocks::adsb::ModeSDecode` and
+`gr::blocks::adsb::PpmFramer<complex<float32>>`, `gr::blocks::adsb::ModeSDecode` and
 `gr::blocks::adsb::AdsbPrinter`, the three blocks this chain builds directly. Each block is entered
 under its type name and under its alias, so a library adds fewer keys than it reports
 registrations. The chain itself never uses the registry, so the keys printed are exactly what the
@@ -174,10 +174,9 @@ Requirements:
 
 - **GNU Radio 4**, installed into one prefix. Core, library and blocks at their `main` branches as
   of 10 September 2026, together with the parts of this receiver that are not merged there yet: the
-  pulse-position framing scanner in the library, the `PpmFramer` block in the blocks project's
-  digital family, and that project's `adsb` family, `ModeSDecode` and `AdsbPrinter`. The willcode
-  forks carry them as the leading commits of `rework`, to be filed as pull requests
-  against GNU Radio 4.
+  pulse-position framing scanner in the library, and the blocks project's `adsb` family: `PpmFramer`,
+  `ModeSDecode` and `AdsbPrinter`. The willcode forks carry them as the leading commits of `rework`,
+  to be filed as pull requests against GNU Radio 4.
 - **The SDR family**, for live devices. The blocks project builds and exports `gnuradio4::gr-sdr`
   only when `GR4_ENABLE_SDR` is on, and that is off by default. Without it this package still
   configures and builds, and `adsb` offers `--file` alone. The configure line says which of the two
