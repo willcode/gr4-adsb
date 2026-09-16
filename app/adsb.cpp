@@ -127,6 +127,9 @@ void usage() {
     }
 }
 
+// Guarded with its one caller: a build against an SDK without the SDR family has no live path at all, and an
+// unused function is an error under this package's -Werror.
+#ifdef GR4ADSB_HAVE_SOAPY
 /// @brief The SoapySDR device string @p spec split the way `SoapySource` wants it: the driver name, then the rest.
 ///
 /// The block takes the driver under `device` and merges the remaining comma-separated `key=value` pairs from
@@ -153,6 +156,7 @@ void usage() {
     }
     return {driver, rest};
 }
+#endif
 
 /// @brief The command line, or nothing when it is not usable. Everything it refuses is reported here.
 [[nodiscard]] std::optional<Options> parse(int argc, char** argv) {
