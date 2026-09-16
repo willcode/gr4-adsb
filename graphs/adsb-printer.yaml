@@ -27,7 +27,7 @@ blocks:
     parameters:
       name: to_record
       signal_label: !!str "adsb"
-  - id: gr::blocks::adsb::AdsbPrinter
+  - id: adsb::AdsbPrinter
     parameters:
       name: printer
       to_stdout: !!bool true

@@ -36,7 +36,7 @@ blocks:
       rx_gains: !!float64
         - 100
       rx_bandwidths: !!float64 []
-  - id: gr::blocks::adsb::PpmFramer<complex<float32>>
+  - id: adsb::PpmFramer<complex<float32>>
     parameters:
       name: framer
       profile: !!str "mode_s"
@@ -44,7 +44,7 @@ blocks:
       threshold: !!float32 2
       phase_steps: !!uint32 1
       coarse_ratio: !!float32 1.0
-  - id: gr::blocks::adsb::ModeSDecode
+  - id: adsb::ModeSDecode
     parameters:
       name: decoder
   - id: gr::blocks::basic::DataSetToPacket<uint8>
