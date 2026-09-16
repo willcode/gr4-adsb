@@ -11,15 +11,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 include(GNUInstallDirs)
+include(CTest)
 
 option(GR4ADSB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
 # gnuradio4         core: Block, Graph, Scheduler, DataSet, the block registry and the plugin loader
-# gnuradio4Library  the algorithm headers the block families pull in
-# gnuradio4Blocks   the families the chain is built from: digital, adsb, basic, fileio, and sdr for a live device
+# gnuradio4Library  the algorithm layer, the pulse-position scanner this package's framer runs on among it
+# gnuradio4Blocks   the families the rest of the chain is built from: basic, fileio, and sdr for a live device
+# GnuRadioBlockLib  gr_add_block_library, which builds blocks/ into this package's plugin
 find_package(gnuradio4 CONFIG REQUIRED)
 find_package(gnuradio4Library CONFIG REQUIRED)
 find_package(gnuradio4Blocks CONFIG REQUIRED)
+find_package(GnuRadioBlockLib CONFIG REQUIRED)
 
 # The installed gnuradio4::gnuradio-options keeps its warning flags behind $<BUILD_INTERFACE:...>, so they do not
 # reach a consuming project; this is the set the application is compiled with instead.
@@ -50,7 +53,36 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
-# app/ holds the whole package: the application with the ConsoleSink it ends its chain with. Every other block in
-# the chain is GNU Radio 4's own and is used as installed, and so is the runner the graph files under graphs/ are
-# run by, rungraph.
+# Boost.UT is what the block tests are written in. GNU Radio 4 installs none of it, so it is looked for the way the
+# SDK's own build looks for it, and -DGR_BOOST_UT_INCLUDE_DIR=<dir> names a source-built copy. Without it the tests
+# are not built and nothing else in the package changes.
+if(BUILD_TESTING)
+  find_package(ut CONFIG QUIET)
+  set(GR4ADSB_UT_LIBRARY "")
+  if(TARGET Boost::ut)
+    set(GR4ADSB_UT_LIBRARY Boost::ut)
+  elseif(TARGET boost::ut)
+    set(GR4ADSB_UT_LIBRARY boost::ut)
+  else()
+    find_path(GR_BOOST_UT_INCLUDE_DIR boost/ut.hpp)
+  endif()
+  if(GR4ADSB_UT_LIBRARY OR GR_BOOST_UT_INCLUDE_DIR)
+    add_library(gr4adsb-ut INTERFACE)
+    if(GR4ADSB_UT_LIBRARY)
+      target_link_libraries(gr4adsb-ut INTERFACE ${GR4ADSB_UT_LIBRARY})
+    else()
+      target_include_directories(gr4adsb-ut SYSTEM INTERFACE "${GR_BOOST_UT_INCLUDE_DIR}")
+    endif()
+    # boost.ut offers itself as a module as well as a header, and the header is what these tests include.
+    target_compile_definitions(gr4adsb-ut INTERFACE BOOST_UT_DISABLE_MODULE)
+  else()
+    message(STATUS "gr4-adsb: Boost.UT was not found, so the block tests are not built")
+  endif()
+endif()
+
+# blocks/ holds the framer, the Mode S message layer and the printer, in the namespace `adsb`: GNU Radio 4 carries
+# no ADS-B family, so this package builds them itself, as one block library a graph runner loads from a plugin
+# directory. app/ holds the one-process application and the ConsoleSink it ends its chain with. Everything else in
+# either chain is the SDK's and is used as installed, and so is rungraph, which runs the graph files under graphs/.
+add_subdirectory(blocks)
 add_subdirectory(app)
