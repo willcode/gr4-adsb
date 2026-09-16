@@ -12,12 +12,20 @@ target_link_libraries(
           gnuradio4::gnuradio-blocklib-core
           gr4adsb-options)
 
-# Where `adsb --verbose` loads block libraries from when --plugin-dir is not given. The SDK writes its own under its
-# library directory, which is lib64 on a distribution that puts libraries there, so the path is derived from where the
-# package configuration was found rather than from this build's own GNUInstallDirs.
+# The two directories `adsb --verbose` loads block libraries from when --plugin-dir is not given.
+#
+# The first is this package's own, where the install puts the ADS-B block library. It is this build's install
+# directory rather than the build tree's, which is the shape the framework's own tools use, so that an installed
+# program reads the installation it belongs to; a run from the build tree names that tree with --plugin-dir.
+#
+# The second is the SDK's, which holds every other family. The SDK writes its libraries under its library directory,
+# which is lib64 on a distribution that puts libraries there, so that path is derived from where the package
+# configuration was found rather than from this build's own GNUInstallDirs.
+set(GR4ADSB_PLUGIN_DIR "${CMAKE_INSTALL_FULL_LIBDIR}/gnuradio-4/plugins")
 get_filename_component(GR4ADSB_SDK_LIBDIR "${gnuradio4Blocks_DIR}/../.." ABSOLUTE)
 set(GR4ADSB_SDK_PLUGIN_DIR "${GR4ADSB_SDK_LIBDIR}/gnuradio-4/plugins")
-target_compile_definitions(adsb PRIVATE "GR4ADSB_SDK_PLUGIN_DIR=\"${GR4ADSB_SDK_PLUGIN_DIR}\"")
+target_compile_definitions(
+  adsb PRIVATE "GR4ADSB_PLUGIN_DIR=\"${GR4ADSB_PLUGIN_DIR}\"" "GR4ADSB_SDK_PLUGIN_DIR=\"${GR4ADSB_SDK_PLUGIN_DIR}\"")
 
 # The SDR family is optional in the SDK. gnuradio4::gr-sdr is exported only when that family was built, and it carries
 # the sdr include path, the algorithm headers SoapySource.hpp pulls in and SoapySDR itself, so linking it is the whole

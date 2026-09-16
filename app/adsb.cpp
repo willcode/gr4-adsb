@@ -11,7 +11,6 @@
 // a magnitude stream does not carry what the interpolation reads.
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -97,8 +96,8 @@ struct Options {
     std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
     bool                  agc = false; ///< ask for the device's own automatic gain control
 
-    bool        verbose = false; ///< load the SDK's block libraries and print the registry keys they add
-    std::string pluginDir{};     ///< directory --verbose loads from; `parse` fills in the SDK's own
+    bool                     verbose = false; ///< load the block libraries and print the registry keys they add
+    std::vector<std::string> pluginDirs{};    ///< directories --verbose loads from; `parse` fills in the built-in pair
 };
 
 void usage() {
@@ -114,8 +113,8 @@ void usage() {
     std::println(stderr, "  --phase-steps N  sub-sample offsets each candidate is re-tested at; 1 turns the fine step off (default 8)");
     std::println(stderr, "  --coarse-ratio R share of the threshold the integer-position test admits a candidate at, in (0, 1] (default 0.5)");
     std::println(stderr, "  --seconds N      stop after N seconds");
-    std::println(stderr, "  --verbose        load the SDK's block libraries and print the registry keys they add, then run");
-    std::println(stderr, "  --plugin-dir DIR directory --verbose loads from (default: the SDK's plugin directory)");
+    std::println(stderr, "  --verbose        load the block libraries and print the registry keys they add, then run");
+    std::println(stderr, "  --plugin-dir DIR directory --verbose loads from; repeatable (default: this package's and the SDK's)");
 }
 
 /// @brief @p text as a number, and nothing unless the whole string is one: "4e6x" is refused, not read as 4e6.
@@ -182,7 +181,7 @@ void usage() {
         } else if (arg == "--file") {
             options.file = std::string(text());
         } else if (arg == "--plugin-dir") {
-            options.pluginDir = std::string(text());
+            options.pluginDirs.emplace_back(text());
         } else if (arg == "--agc") {
             const std::string_view value = text();
             if (value != "on" && value != "off") {
@@ -251,30 +250,34 @@ void usage() {
         std::println(stderr, "adsb: {} does not exist", options.file);
         return std::nullopt;
     }
-    if (options.pluginDir.empty()) {
-        options.pluginDir = GR4ADSB_SDK_PLUGIN_DIR;
+    if (options.pluginDirs.empty()) {
+        // The two an installed `adsb` loads from: this package's own plugin directory, which holds the ADS-B block
+        // library, and the SDK's, which holds every other family. Both are the directories of the install this
+        // build was configured for, so an installed program needs no --plugin-dir.
+        options.pluginDirs.assign({std::string(GR4ADSB_PLUGIN_DIR), std::string(GR4ADSB_SDK_PLUGIN_DIR)});
     }
     return options;
 }
 
-/// @brief Load the shared block libraries in @p directory and print the registry keys they add.
+/// @brief Load the shared block libraries in @p directories and print the registry keys they add.
 ///
 /// The chain below uses `emplaceBlock<T>` and does not need the registry, so nothing is registered when this runs and
 /// every key printed came from a loaded library. Those keys are the names a graph built from a saved description
-/// would use, the three this chain names among them.
+/// would use, the three `adsb::` ones this chain names among them.
 ///
 /// The loader is destroyed when this function returns; the libraries it opened stay mapped. `gr::PluginLoader` keeps a
 /// shared object that registered blocks from its static initializers mapped for the life of the process, because the
 /// registry then holds factory pointers into that object's code.
-void reportPlugins(const std::string& directory) {
+void reportPlugins(const std::vector<std::string>& directories) {
     gr::BlockRegistry&       registry = gr::globalBlockRegistry();
     std::vector<std::string> before   = registry.keys();
     std::ranges::sort(before);
 
-    const std::array<std::string, 1UZ> paths{directory};
-    const gr::PluginLoader             loader(registry, gr::globalSchedulerRegistry(), paths);
+    const gr::PluginLoader loader(registry, gr::globalSchedulerRegistry(), directories);
 
-    std::println(stderr, "adsb: plugin directory {}", directory);
+    for (const std::string& directory : directories) {
+        std::println(stderr, "adsb: plugin directory {}", directory);
+    }
     for (const gr::PluginLoader::BlockLibrary& library : loader.blockLibraries()) {
         std::println(stderr, "adsb: loaded {} ({} registrations)", library.file, library.nBlockRegistrations);
     }
@@ -293,7 +296,7 @@ void reportPlugins(const std::string& directory) {
     std::vector<std::string> added;
     std::ranges::set_difference(after, before, std::back_inserter(added));
     if (added.empty()) {
-        std::println(stderr, "adsb: nothing in {} registered a block", directory);
+        std::println(stderr, "adsb: nothing in those directories registered a block");
         return;
     }
     std::println(stderr, "adsb: the registry gained {} keys:", added.size());
@@ -313,7 +316,7 @@ int main(int argc, char** argv) {
     const Options& options = *parsed;
 
     if (options.verbose) {
-        reportPlugins(options.pluginDir);
+        reportPlugins(options.pluginDirs);
     }
 
     gr::Graph flow;
