@@ -3,8 +3,9 @@
 // Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
 // File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
 //
-// Every block in the chain but the last comes from GNU Radio 4 and is used as installed. ConsoleSink is defined
-// below; it is the only block in the chain that assumes a terminal.
+// PpmFramer, ModeSDecode and AdsbPrinter are this package's own, in the namespace `adsb` under blocks/; the rest
+// of the chain comes from GNU Radio 4 and is used as installed. ConsoleSink is defined below; it is the only block
+// in the chain that assumes a terminal.
 //
 // The framer takes complex samples rather than magnitudes: its sub-sample phase search interpolates the signal, and
 // a magnitude stream does not carry what the interpolation reads.
@@ -35,9 +36,10 @@
 #include <gnuradio-4.0/PluginLoader.hpp>
 #include <gnuradio-4.0/Scheduler.hpp>
 
-#include <gnuradio-4.0/adsb/AdsbPrinter.hpp>
-#include <gnuradio-4.0/adsb/ModeS.hpp>
-#include <gnuradio-4.0/adsb/PpmFramer.hpp>
+#include <adsb/AdsbPrinter.hpp>
+#include <adsb/ModeS.hpp>
+#include <adsb/PpmFramer.hpp>
+
 #include <gnuradio-4.0/basic/ConverterBlocks.hpp>
 #include <gnuradio-4.0/fileio/BasicFileIo.hpp>
 
@@ -229,7 +231,7 @@ void usage() {
         return std::nullopt;
     }
     // the rate rule belongs to the framer and is asked of it, so the application cannot disagree with the block
-    if (gr::blocks::adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
+    if (adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
         std::println(stderr, "adsb: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
         return std::nullopt;
     }
@@ -315,15 +317,15 @@ int main(int argc, char** argv) {
     }
 
     gr::Graph flow;
-    auto&     framer  = flow.emplaceBlock<gr::blocks::adsb::PpmFramer<std::complex<float>>>({
+    auto&     framer  = flow.emplaceBlock<adsb::PpmFramer<std::complex<float>>>({
         {"sample_rate", options.rate},
         {"profile", std::string("mode_s")},
         {"threshold", options.threshold},
         {"phase_steps", static_cast<gr::Size_t>(options.phaseSteps)},
         {"coarse_ratio", options.coarseRatio},
     });
-    auto&     decoder = flow.emplaceBlock<gr::blocks::adsb::ModeSDecode>();
-    auto&     printer = flow.emplaceBlock<gr::blocks::adsb::AdsbPrinter>();
+    auto&     decoder = flow.emplaceBlock<adsb::ModeSDecode>();
+    auto&     printer = flow.emplaceBlock<adsb::AdsbPrinter>();
     auto&     console = flow.emplaceBlock<ConsoleSink>();
 
     bool wired = true;

@@ -1,11 +1,12 @@
 add_executable(adsb adsb.cpp)
 
-# The application names every block type and builds its chain with emplaceBlock<T>, so what it takes from the SDK is
-# the block families' include paths. --verbose opens the SDK's shared block libraries through gr::PluginLoader, which
-# uses the process-wide block and scheduler registries; those are defined in gnuradio-blocklib-core.
+# The application names every block type and builds its chain with emplaceBlock<T>, so what it takes is include
+# paths: gr4adsb-blocks for this package's three ADS-B blocks, the SDK's families for the rest. --verbose opens
+# shared block libraries through gr::PluginLoader, which uses the process-wide block and scheduler registries; those
+# are defined in gnuradio-blocklib-core.
 target_link_libraries(
   adsb
-  PRIVATE gnuradio4::gr-adsb
+  PRIVATE gr4adsb-blocks
           gnuradio4::gr-basic
           gnuradio4::gr-fileio
           gnuradio4::gnuradio-blocklib-core
