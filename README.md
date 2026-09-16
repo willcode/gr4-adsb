@@ -37,14 +37,17 @@ Or open a radio. Give the rate alone first: a device that is fussy about its par
 likely to open this way.
 
 ```
-./build/app/adsb --device "driver=rtlsdr"        --rate 2e6 --agc on
+./build/app/adsb --device "driver=rtlsdr"        --rate 2e6 --gain 40
+./build/app/adsb --device "driver=hackrf"        --rate 2e6 --gain 100
 ./build/app/adsb --device "driver=sdrplay"       --rate 6e6
-./build/app/adsb --device "driver=hackrf"        --rate 4e6 --gain 90
 ./build/app/adsb --device "driver=uhd,type=b200" --rate 4e6
 ```
 
-Once a device streams, add what it needs: the RTL-SDR its AGC, the HackRF a high gain, and on a
-device whose default filter is narrower than the pulses, the analog bandwidth (see Running).
+Once a device streams, add what it needs: the RTL-SDR a gain or its AGC, the HackRF a high gain, and
+on a device whose default filter is narrower than the pulses, the analog bandwidth (see Running). On a
+small computer add `--phase-steps 1 --coarse-ratio 1` as well: the framer's sub-sample phase search
+(see How it works) costs more than a Raspberry Pi 3 core has at 2 MS/s, and with it off the chain
+keeps up.
 
 ## How it works
 
@@ -144,18 +147,20 @@ above 1 GHz an RSP1A has fewer states than that, and the device then refuses the
 with `Init() failed: sdrplay_api_Fail`. Rate, frequency and bandwidth alone stream cleanly. 6 MS/s
 with 6 MHz of bandwidth, and 4 MS/s with 5 MHz, are good operating points on an RSP1A.
 
-**On an RTL-SDR use `--agc on` and no `--gain`.** With a fixed tuner gain the dongle's 8-bit samples
-sit at the bottom of their range, so gap slots and bit decisions rest on one or two quantization
-steps. `--agc on` turns on the RTL2832's digital gain as well as the tuner's and lifts the signal
-into the converter's range. `--agc off` is the default and asks for nothing; the block only ever
-turns AGC on, so there is no way from here to force it off on a device that enables it by itself. An
-SDRplay runs its AGC by default, which suits ADS-B.
+**On an RTL-SDR give a gain, or `--agc on`.** The dongle's own default is 0 dB, which hears nothing;
+`--gain 40` is a working figure. With a fixed tuner gain the 8-bit samples can still sit low in their
+range, so that gap slots and bit decisions rest on one or two quantization steps; `--agc on` turns on
+the RTL2832's digital gain as well as the tuner's and lifts the signal into the converter's range.
+`--agc off` is the default and asks for nothing; the block only ever turns AGC on, so there is no way
+from here to force it off on a device that enables it by itself. An SDRplay runs its AGC by default,
+which suits ADS-B.
 
-**A HackRF needs `--gain 90` or thereabouts.** The driver opens the radio with 16 dB on the LNA and
-16 dB on the VGA, which leaves the noise floor below one step of the 8-bit converter, so only a
-nearby aircraft is heard. `--gain` is SoapySDR's overall gain and the HackRF driver splits it
-across the amplifier, the LNA and the VGA; around 90 dB is a good point at 4 MS/s, and 110 dB
-overloads the front end. Leave `--bandwidth` to the driver unless a measurement says otherwise.
+**A HackRF needs `--gain 100` or thereabouts.** The driver opens the radio with 16 dB on the LNA and
+16 dB on the VGA, which leaves the noise floor below one step of the 8-bit converter, so nothing is
+heard; at 40 dB still nothing, at 70 dB only the nearest aircraft. `--gain` is SoapySDR's overall
+gain and the HackRF driver splits it across the amplifier, the LNA and the VGA — 100 dB lands as
+LNA 31, AMP 14, VGA 55 — and 110 dB overloads the front end. Leave `--bandwidth` to the driver unless
+a measurement says otherwise.
 
 **`--verbose` opens every shared block library in the plugin directory through `gr::PluginLoader`
 and prints the registry keys they add.** It names each library and how many registrations it
@@ -180,7 +185,8 @@ happen at a desk.
   ───────────────────────────────────────────────         ──────────────────────────────────────
   radio ─► PpmFramer ─► ModeSDecode ─► DataSetToPacket     ZmqPacketSource ─► PacketToDataSet
                                             │                      ▲                │
-                                       ZmqPacketSink ─────── tcp:5560 ──────► AdsbPrinter
+                                            ▼                      │                ▼
+                                       ZmqPacketSink ═══════ tcp:5560 ═══════┘   AdsbPrinter
 ```
 
 **The decode happens at the radio and crosses the network once.** What travels is the decoder's own
@@ -199,20 +205,19 @@ complex floats is 16 MB/s and there is no reason to carry it.
 | `graphs/adsb-printer.yaml` | at the desk | the printer half, which prints the lines the one-process application prints |
 
 **The gain decides whether the receiver hears anything, and the two radios want very different
-figures.** A HackRF at 1090 MHz needs far more gain than it does lower down: measured on the air,
-40 dB gave nothing, 70 dB a few frames, and 100 dB — which SoapyHackRF splits as LNA 31, AMP 14,
-VGA 55 — gave 57 frames from five aircraft in 40 seconds. An RTL-SDR's own default is 0 dB, which
-also hears nothing, and at 40 dB on the same antenna in the same minutes it decoded one frame in 45
-seconds. Hence the order: the HackRF graph is the one to run, and the RTL graph is kept because the
-dongle is common.
+figures.** A HackRF at 1090 MHz needs far more gain than it does lower down: nothing at 40 dB, the
+nearest aircraft at 70, and the sky at 100 — which SoapyHackRF splits as LNA 31, AMP 14, VGA 55. An
+RTL-SDR's own default is 0 dB, which also hears nothing; 40 dB is its working figure, and on the same
+antenna it hears far less than the HackRF. Hence the order: the HackRF graph is the one to run, and
+the RTL graph is kept because the dongle is common.
 
 **The two framer settings differ from the application's defaults, and the reason is the Raspberry
 Pi 3's processor.** `adsb` defaults to `--phase-steps 8 --coarse-ratio 0.5`: each candidate position
 is re-tested at eight sub-sample offsets, which finds frames whose preamble falls between two
-samples and is worth having at 2 MS/s. On a Pi 3 it is not affordable — the chain consumed 0.4 MS/s
-of the 2 MS/s and the radio overflowed continuously. The graphs therefore carry `phase_steps: 1` and
-`coarse_ratio: 1.0`, the fine search off, at which the Pi kept up at the full rate for 45 seconds
-with no overflow. On a machine with the cycles, put 8 and 0.5 back.
+samples and is worth having at 2 MS/s. On a Pi 3 it is not affordable — with it the chain runs at a
+fifth of real time and the radio overflows. The graphs therefore carry `phase_steps: 1` and
+`coarse_ratio: 1.0`, the fine search off, at which the Pi keeps up at the full rate. On a machine
+with the cycles, put 8 and 0.5 back.
 
 ### Running the two halves
 
@@ -222,13 +227,16 @@ nothing about modems or ADS-B.
 
 ```
 on the machine with the radio (/opt/gr4-adsb holds this package, /opt/gr4-modem-demo the runner):
-    /opt/gr4-modem-demo/bin/modem_run \
-        --graph /opt/gr4-adsb/graphs/adsb-hackrf.yaml \
-        --plugin-dir /opt/gnuradio4/lib/gnuradio-4/plugins
+    /opt/gr4-modem-demo/bin/modem_run --graph /opt/gr4-adsb/graphs/adsb-hackrf.yaml
 
 at the desk, with <receiver> edited into the endpoint of graphs/adsb-printer.yaml:
-    modem_run --graph graphs/adsb-printer.yaml --plugin-dir <prefix>/lib64/gnuradio-4/plugins
+    modem_run --graph graphs/adsb-printer.yaml
 ```
+
+`modem_run` always searches the plugin directory of the GNU Radio 4 it was built against, which is
+where every block these graphs name lives; `--plugin-dir DIR` adds another directory, `--seconds S`
+bounds a run, and `--show NAME` prints a block's settings and counters when the run ends
+(`--show packet_sink` on the capture half, `--show packet_source` on the printer half).
 
 The printer prints the same lines `adsb` prints, because it is the same `AdsbPrinter`. `to_stdout`
 is what makes it print: the block publishes its line as a record, and the application's own
@@ -247,8 +255,9 @@ packets are readable by something that is not GNU Radio 4:
 python3 tools/adsb_listen.py --endpoint tcp://<receiver>:5560
 ```
 
-One line per frame: the time in the receiver's stream, the frame's octets in hex, and every metadata
-key the decoder wrote.
+`--topic` is the subscription prefix (`adsb`, as the graphs publish it); `--seconds N` or `--count N`
+bounds the run, and without either it reads until interrupted. One line per frame: the time in the
+receiver's stream, the frame's octets in hex, and every metadata key the decoder wrote.
 
 ```
      2.767  8DAA1BAA592E206EF883BEB1DE82  protocol mode_s/adsb  mode_s_format 17  mode_s_icao AA1BAA
@@ -275,18 +284,20 @@ on the machine with the radio:
     GR4CP_PORT=20081 /opt/gr4cp/bin/gr4cp_server
 
 at the desk:
-    python3 tools/adsb_control.py --server http://p25.local:20081 \
-        --graph graphs/adsb-hackrf.yaml --seconds 60 --show packet_sink
     modem_run --graph graphs/adsb-printer.yaml        # started first, as always
+    python3 tools/adsb_control.py --server http://<receiver>:20081 \
+        --graph graphs/adsb-hackrf.yaml --seconds 60 --show packet_sink
 ```
 
-`adsb_control.py` posts the graph file as a session, starts it, reads named blocks' settings and
-counters back while it runs, and stops and deletes the session on the way out. It needs Python 3 and
-nothing else, because all it sends is text.
+`adsb_control.py` posts the graph file as a session (`--name` names it; the default is the file's
+base name), starts it, reads the settings and counters of each `--show` block when the run ends, and
+stops and deletes the session on the way out; without `--seconds` the session runs until the script
+is interrupted. It needs Python 3 and nothing else, because all it sends is text.
 
-The server is told a port and nothing else and listens on every interface, so a machine on an
-untrusted network needs a firewall rule on 20081 and on 5560. Its plugin directories are compiled
-in; on the Pi they are `/opt/gnuradio4/lib/gnuradio-4/plugins`, `/opt/gnuradio4/lib` and
+The server takes its port from `GR4CP_PORT` and listens on every interface, so a machine on an
+untrusted network needs a firewall rule on that port and on 5560. Its block directories are compiled
+in and `GNURADIO4_PLUGIN_DIRECTORIES` overrides them; on a machine installed as above they are
+`/opt/gnuradio4/lib/gnuradio-4/plugins`, `/opt/gnuradio4/lib` and
 `/opt/gr4-modem-demo/lib/gnuradio-4/plugins`. **The server and the block libraries it loads have to
 come from one GNU Radio 4 prefix**: a plugin built against another one puts two builds of the
 framework in one process, and the catalog that reads the plugin's blocks either skips them or stops
@@ -299,16 +310,16 @@ leave on the graph's own socket, to the printer half or to `adsb_listen.py`.
 
 Requirements:
 
-- **GNU Radio 4**, installed into one prefix. Core, library and blocks at their `main` branches as
-  of 10 September 2026, together with the parts of this receiver that are not merged there yet: the
-  pulse-position framing scanner in the library, and the blocks project's `adsb` family: `PpmFramer`,
-  `ModeSDecode` and `AdsbPrinter`. The willcode forks carry them as the leading commits of `rework`,
-  to be filed as pull requests against GNU Radio 4.
+- **GNU Radio 4**, core, library and blocks installed into one prefix, with the library's
+  pulse-position framing scanner and the blocks project's `adsb` family (`PpmFramer`, `ModeSDecode`
+  and `AdsbPrinter`).
 - **The SDR family**, for live devices. The blocks project builds and exports `gnuradio4::gr-sdr`
   only when `GR4_ENABLE_SDR` is on, and that is off by default. Without it this package still
   configures and builds, and `adsb` offers `--file` alone. The configure line says which of the two
   this build got.
 - **SoapySDR** and a driver for the radio, again only for live devices.
+- **The network family** (`GR4_ENABLE_NETWORK` on, with libzmq and the cppzmq header), for the
+  two-machine graphs alone: the one-process `adsb` does not use it.
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
