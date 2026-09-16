@@ -168,6 +168,133 @@ libraries brought, and the rest of the run is unchanged. `--plugin-dir` override
 default is the plugin directory of the GNU Radio 4 this build was configured against,
 `<prefix>/lib/gnuradio-4/plugins` or `lib64` on a distribution that puts libraries there.
 
+## Two machines
+
+The receiver and the display do not have to be the same computer. `adsb` is one process with the
+whole chain in it; the same chain also exists as graph files, cut in two at the point where a frame
+has been decoded, so the radio can sit on a small machine near the antenna and the reading can
+happen at a desk.
+
+```
+  near the antenna                                        at the desk
+  ───────────────────────────────────────────────         ──────────────────────────────────────
+  radio ─► PpmFramer ─► ModeSDecode ─► DataSetToPacket     ZmqPacketSource ─► PacketToDataSet
+                                            │                      ▲                │
+                                       ZmqPacketSink ─────── tcp:5560 ──────► AdsbPrinter
+```
+
+**The decode happens at the radio and crosses the network once.** What travels is the decoder's own
+record — the frame's octets and the typed metadata it read out of them, the ICAO address, the
+message type, the altitude, the position — so the far end renders and never re-decodes, and a second
+reader of the same socket sees exactly what the first one sees. The samples do not travel: 2 MS/s of
+complex floats is 16 MB/s and there is no reason to carry it.
+
+### The four graphs
+
+| file | where it runs | what it is |
+|---|---|---|
+| `graphs/adsb-hackrf.yaml` | at the antenna | the capture half on a HackRF, which is the better of the two radios here |
+| `graphs/adsb-rtl.yaml` | at the antenna | the same on an RTL-SDR, which is what most people have |
+| `graphs/adsb-capture.yaml` | anywhere | the same reading the recorded capture instead of a radio, for trying the split with no radio at all |
+| `graphs/adsb-printer.yaml` | at the desk | the printer half, which prints the lines the one-process application prints |
+
+**The gain decides whether the receiver hears anything, and the two radios want very different
+figures.** A HackRF at 1090 MHz needs far more gain than it does lower down: measured on the air,
+40 dB gave nothing, 70 dB a few frames, and 100 dB — which SoapyHackRF splits as LNA 31, AMP 14,
+VGA 55 — gave 57 frames from five aircraft in 40 seconds. An RTL-SDR's own default is 0 dB, which
+also hears nothing, and at 40 dB on the same antenna in the same minutes it decoded one frame in 45
+seconds. Hence the order: the HackRF graph is the one to run, and the RTL graph is kept because the
+dongle is common.
+
+**The two framer settings differ from the application's defaults, and the reason is the Raspberry
+Pi 3's processor.** `adsb` defaults to `--phase-steps 8 --coarse-ratio 0.5`: each candidate position
+is re-tested at eight sub-sample offsets, which finds frames whose preamble falls between two
+samples and is worth having at 2 MS/s. On a Pi 3 it is not affordable — the chain consumed 0.4 MS/s
+of the 2 MS/s and the radio overflowed continuously. The graphs therefore carry `phase_steps: 1` and
+`coarse_ratio: 1.0`, the fine search off, at which the Pi kept up at the full rate for 45 seconds
+with no overflow. On a machine with the cycles, put 8 and 0.5 back.
+
+### Running the two halves
+
+Either half is run by any program that loads a GNU Radio 4 graph file. `modem_run`, from
+`gr4-modem-demo`, is one: it takes `--graph`, `--plugin-dir`, `--seconds` and `--show`, and knows
+nothing about modems or ADS-B.
+
+```
+on the machine with the radio (/opt/gr4-adsb holds this package, /opt/gr4-modem-demo the runner):
+    /opt/gr4-modem-demo/bin/modem_run \
+        --graph /opt/gr4-adsb/graphs/adsb-hackrf.yaml \
+        --plugin-dir /opt/gnuradio4/lib/gnuradio-4/plugins
+
+at the desk, with <receiver> edited into the endpoint of graphs/adsb-printer.yaml:
+    modem_run --graph graphs/adsb-printer.yaml --plugin-dir <prefix>/lib64/gnuradio-4/plugins
+```
+
+The printer prints the same lines `adsb` prints, because it is the same `AdsbPrinter`. `to_stdout`
+is what makes it print: the block publishes its line as a record, and the application's own
+`ConsoleSink` — which writes those records to a terminal — is not a registered block and so cannot
+be named from a graph file.
+
+**Start the reading end first.** A ZeroMQ publisher discards what it sends before a subscriber has
+connected, so a receiver started first will have published its first frames into an empty room.
+
+### The small script
+
+`tools/adsb_listen.py` is the other reader of the same socket, and the demonstration that the
+packets are readable by something that is not GNU Radio 4:
+
+```
+python3 tools/adsb_listen.py --endpoint tcp://<receiver>:5560
+```
+
+One line per frame: the time in the receiver's stream, the frame's octets in hex, and every metadata
+key the decoder wrote.
+
+```
+     2.767  8DAA1BAA592E206EF883BEB1DE82  protocol mode_s/adsb  mode_s_format 17  mode_s_icao AA1BAA
+            adsb_type_code 11  adsb_message airborne_position  adsb_altitude_ft 3600  ...  crc_ok true
+```
+
+It needs `pyzmq` and nothing else — `pip install pyzmq`, or `dnf install python3-zmq`, or `apt
+install python3-zmq`. There is no way to do without it: ZeroMQ is a wire protocol over the socket,
+not a datagram format, so a raw socket would have to implement its handshake and framing. What the
+script does implement is the envelope inside it, from the published header table in
+`docs/specs/spec-packet-transport.md`: four frames — the subscription topic, a 32-byte little-endian
+header, a YAML metadata document, and the payload.
+
+Both readers can run at once. The sink publishes; any number of subscribers take what it publishes.
+
+### Under a control plane
+
+The reading end does not have to reach into the receiving machine to start it. `gr4cp_server`, the
+GNU Radio 4 control plane, runs sessions from graph files it is given over HTTP, so the receiving
+machine runs one server and nothing else, and the desk decides what it runs and when.
+
+```
+on the machine with the radio:
+    GR4CP_PORT=20081 /opt/gr4cp/bin/gr4cp_server
+
+at the desk:
+    python3 tools/adsb_control.py --server http://p25.local:20081 \
+        --graph graphs/adsb-hackrf.yaml --seconds 60 --show packet_sink
+    modem_run --graph graphs/adsb-printer.yaml        # started first, as always
+```
+
+`adsb_control.py` posts the graph file as a session, starts it, reads named blocks' settings and
+counters back while it runs, and stops and deletes the session on the way out. It needs Python 3 and
+nothing else, because all it sends is text.
+
+The server is told a port and nothing else and listens on every interface, so a machine on an
+untrusted network needs a firewall rule on 20081 and on 5560. Its plugin directories are compiled
+in; on the Pi they are `/opt/gnuradio4/lib/gnuradio-4/plugins`, `/opt/gnuradio4/lib` and
+`/opt/gr4-modem-demo/lib/gnuradio-4/plugins`. **The server and the block libraries it loads have to
+come from one GNU Radio 4 prefix**: a plugin built against another one puts two builds of the
+framework in one process, and the catalog that reads the plugin's blocks either skips them or stops
+the server.
+
+The control plane starts and stops the receiver; it does not carry its output. The frames still
+leave on the graph's own socket, to the printer half or to `adsb_listen.py`.
+
 ## Building
 
 Requirements:
@@ -201,8 +328,13 @@ is checked end to end, and a capture large enough to carry frames is too large t
 
 ## Layout
 
-`app/` holds the whole package: `adsb.cpp`, which is the application and `ConsoleSink` together.
-Everything else in the chain belongs to GNU Radio 4 and is used as installed.
+`app/` holds the one-process program: `adsb.cpp`, which is the application and `ConsoleSink`
+together. Everything else in the chain belongs to GNU Radio 4 and is used as installed.
+
+`graphs/` holds the same chain as graph files, cut in two at the decoded frame, and `tools/` the two
+Python programs that go with them — a reader of the receiver's socket and a client of a control
+plane. Neither directory is compiled and neither is installed by the build; they are text, and the
+programs that read them are the SDK's own.
 
 `adsb` names every block type and builds its chain with `emplaceBlock<T>`, the direct, statically
 checked route, which is what a program that knows its own chain needs. The registry is for a

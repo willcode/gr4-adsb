@@ -1,0 +1,71 @@
+# The capture half on a live RTL-SDR: the second of the two radios here.
+#
+# SoapySource -> PpmFramer -> ModeSDecode -> DataSetToPacket -> ZmqPacketSink
+#
+# adsb-hackrf.yaml is the same graph on the better radio and is the one to run; this one is kept because an
+# RTL-SDR is what most people have. On the same antenna and in the same minutes, the HackRF at 100 dB decoded
+# 57 frames from five aircraft in 40 s and this receiver at 40 dB decoded one in 45 s.
+#
+# adsb-capture.yaml is this graph with the radio replaced by a file, and the three graphs are kept the same
+# from the framer on so that a file run and either radio publish the same packets.
+#
+# The source is gr::blocks::sdr::SoapySource, which is what app/adsb.cpp opens a device with and therefore the
+# one path that has decoded from this dongle. gr::blocks::sdr::RTL2832Source drives librtlsdr directly and
+# would do without SoapySDR entirely; it is the alternative if the Soapy module is a nuisance to install, and
+# it takes a different settings set.
+#
+# What is asked of the device: the rate, the frequency and the gain. 2 MS/s is the rate the framer wants, an
+# even integer multiple of 1 MHz, and it is inside what an RTL-SDR streams without dropping. The gain is given
+# rather than left to the device because an RTL-SDR's own default is 0 dB, which hears nothing at 1090 MHz;
+# 40 dB is what decoded a live frame. rx_bandwidths stays an empty vector, which is how the block is told not
+# to ask at all, as against a zero, which it would apply; an RTL-SDR has no analog filter to set anyway.
+#
+# phase_steps and coarse_ratio are not the application's defaults and the README says why: the framer's
+# sub-sample phase search costs more than a Raspberry Pi 3 core has at this rate. At 8 steps the Pi consumed
+# 0.4 MS/s of the 2 MS/s and the device overflowed continuously; at one step -- the fine search off, which is
+# what coarse_ratio 1.0 goes with -- it kept up at the full rate with no overflow. A machine with the cycles
+# to spare wants the application's 8 and 0.5 back, which finds frames whose preamble falls between samples.
+#
+# The sink binds every interface, because the printer connects from another machine. That port answers to
+# whatever reaches it; a machine on an untrusted network needs a firewall rule on 5560.
+blocks:
+  - id: gr::blocks::sdr::SoapySource<complex<float32>>
+    parameters:
+      name: radio
+      device: !!str "rtlsdr"
+      device_parameter: !!str ""
+      sample_rate: !!float32 2000000
+      frequency: !!float64
+        - 1090000000
+      rx_gains: !!float64
+        - 40
+      rx_bandwidths: !!float64 []
+  - id: gr::blocks::adsb::PpmFramer<complex<float32>>
+    parameters:
+      name: framer
+      profile: !!str "mode_s"
+      sample_rate: !!float32 2000000
+      threshold: !!float32 2
+      phase_steps: !!uint32 1
+      coarse_ratio: !!float32 1.0
+  - id: gr::blocks::adsb::ModeSDecode
+    parameters:
+      name: decoder
+  - id: gr::blocks::basic::DataSetToPacket<uint8>
+    parameters:
+      name: to_packet
+      source_label: !!str "adsb-rtl"
+      frequency_hz: !!float64 1090000000
+  - id: gr::blocks::network::ZmqPacketSink<uint8>
+    parameters:
+      name: packet_sink
+      endpoint: !!str "tcp://0.0.0.0:5560"
+      bind: !!bool true
+      pattern: !!str "pub"
+      topic: !!str "adsb"
+      linger_ms: !!int32 500
+connections:
+  - [radio, out, framer, in]
+  - [framer, out, decoder, in]
+  - [decoder, out, to_packet, in]
+  - [to_packet, out, packet_sink, in]

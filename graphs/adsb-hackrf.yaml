@@ -1,0 +1,67 @@
+# The capture half on a live HackRF: what the receiving machine runs, and the better of the two radios here.
+#
+# SoapySource -> PpmFramer -> ModeSDecode -> DataSetToPacket -> ZmqPacketSink
+#
+# adsb-capture.yaml is this graph with the radio replaced by a file, and the three graphs are kept the same
+# from the framer on so that a file run and either radio publish the same packets.
+#
+# The source is gr::blocks::sdr::SoapySource, which is what app/adsb.cpp opens a device with and therefore the
+# one path that has decoded from these radios.
+#
+# What is asked of the device: the rate, the frequency and the gain. 2 MS/s is the rate the framer wants, an
+# even integer multiple of 1 MHz. The gain is the setting that decides whether this receiver hears anything:
+# a HackRF at 1090 MHz needs far more of it than a receiver at a lower frequency does, and the three figures
+# measured on the air were 40 dB nothing, 70 dB a few frames, 100 dB many -- SoapyHackRF splits 100 across its
+# three stages as LNA 31, AMP 14 and VGA 55. rx_bandwidths stays an empty vector, which is how the block is
+# told not to ask at all, as against a zero, which it would apply; the 1.75 MHz the driver picks for this rate
+# is its own floor and is wider than the pulses.
+#
+# phase_steps and coarse_ratio are not the application's defaults and the README says why: the framer's
+# sub-sample phase search costs more than a Raspberry Pi 3 core has at this rate. At 8 steps the Pi consumed
+# 0.4 MS/s of the 2 MS/s and the device overflowed continuously; at one step -- the fine search off, which is
+# what coarse_ratio 1.0 goes with -- it kept up at the full rate with no overflow. A machine with the cycles
+# to spare wants the application's 8 and 0.5 back, which finds frames whose preamble falls between samples.
+#
+# The sink binds every interface, because the printer connects from another machine. That port answers to
+# whatever reaches it; a machine on an untrusted network needs a firewall rule on 5560.
+blocks:
+  - id: gr::blocks::sdr::SoapySource<complex<float32>>
+    parameters:
+      name: radio
+      device: !!str "hackrf"
+      device_parameter: !!str ""
+      sample_rate: !!float32 2000000
+      frequency: !!float64
+        - 1090000000
+      rx_gains: !!float64
+        - 100
+      rx_bandwidths: !!float64 []
+  - id: gr::blocks::adsb::PpmFramer<complex<float32>>
+    parameters:
+      name: framer
+      profile: !!str "mode_s"
+      sample_rate: !!float32 2000000
+      threshold: !!float32 2
+      phase_steps: !!uint32 1
+      coarse_ratio: !!float32 1.0
+  - id: gr::blocks::adsb::ModeSDecode
+    parameters:
+      name: decoder
+  - id: gr::blocks::basic::DataSetToPacket<uint8>
+    parameters:
+      name: to_packet
+      source_label: !!str "adsb-hackrf"
+      frequency_hz: !!float64 1090000000
+  - id: gr::blocks::network::ZmqPacketSink<uint8>
+    parameters:
+      name: packet_sink
+      endpoint: !!str "tcp://0.0.0.0:5560"
+      bind: !!bool true
+      pattern: !!str "pub"
+      topic: !!str "adsb"
+      linger_ms: !!int32 500
+connections:
+  - [radio, out, framer, in]
+  - [framer, out, decoder, in]
+  - [decoder, out, to_packet, in]
+  - [to_packet, out, packet_sink, in]

@@ -1,0 +1,58 @@
+# The capture half of the split receiver, reading a recorded capture instead of a radio.
+#
+# BasicFileSource -> Convert -> InterleavedToComplex -> PpmFramer -> ModeSDecode -> DataSetToPacket -> ZmqPacketSink
+#
+# This is adsb-rtl.yaml with the radio replaced by a file, and it is what proves the split without one: the
+# decoded frames leave this process as packets on a ZeroMQ socket and any number of readers take them.
+#
+# The rate is the capture's own 2 MS/s and the framer will not take a rate that is not an even integer multiple
+# of 1 MHz, because a half-microsecond slot has to be a whole number of samples.
+#
+# The registry has InterleavedToComplex only from float32, so the int16 pairs are widened first. Convert does not
+# scale, which costs nothing here: the framer nominates on a ratio and decides bits by comparison, so a positive
+# scale factor cannot change what it reads.
+blocks:
+  - id: gr::blocks::fileio::BasicFileSource<int16>
+    parameters:
+      name: capture_file
+      file_name: !!str "/home/jwl/gnuradio-claude/recordings/ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data"
+  - id: gr::blocks::basic::Convert<int16, float32>
+    parameters:
+      name: widen
+  - id: gr::blocks::basic::InterleavedToComplex<float32, complex<float32>>
+    parameters:
+      name: to_complex
+  - id: gr::blocks::adsb::PpmFramer<complex<float32>>
+    parameters:
+      name: framer
+      profile: !!str "mode_s"
+      sample_rate: !!float32 2000000
+      threshold: !!float32 2
+      phase_steps: !!uint32 8
+      coarse_ratio: !!float32 0.5
+  - id: gr::blocks::adsb::ModeSDecode
+    parameters:
+      name: decoder
+  - id: gr::blocks::basic::DataSetToPacket<uint8>
+    parameters:
+      name: to_packet
+      source_label: !!str "adsb-capture"
+      frequency_hz: !!float64 1090000000
+  # bind, because the producer is the stable end: the printer and the listener come and go against it.
+  # linger_ms holds the socket open briefly at teardown so the last frames of a file that has just ended
+  # are not discarded with the graph.
+  - id: gr::blocks::network::ZmqPacketSink<uint8>
+    parameters:
+      name: packet_sink
+      endpoint: !!str "tcp://127.0.0.1:5560"
+      bind: !!bool true
+      pattern: !!str "pub"
+      topic: !!str "adsb"
+      linger_ms: !!int32 500
+connections:
+  - [capture_file, out, widen, in]
+  - [widen, out, to_complex, interleaved]
+  - [to_complex, out, framer, in]
+  - [framer, out, decoder, in]
+  - [decoder, out, to_packet, in]
+  - [to_packet, out, packet_sink, in]
