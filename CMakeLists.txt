@@ -50,6 +50,7 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
-# app/ holds the whole package: the application and the ConsoleSink it ends its chain with. Every other block in the
-# chain is GNU Radio 4's own and is used as installed.
+# app/ holds the whole package: the application with the ConsoleSink it ends its chain with, and the graph runner the
+# two halves of the split receiver are run by. Every other block in the chain is GNU Radio 4's own and is used as
+# installed.
 add_subdirectory(app)
