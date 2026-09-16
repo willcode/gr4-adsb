@@ -86,3 +86,9 @@ endif()
 # either chain is the SDK's and is used as installed, and so is rungraph, which runs the graph files under graphs/.
 add_subdirectory(blocks)
 add_subdirectory(app)
+
+# The graph files and the two Python programs are text, and the README's commands name them by path, so an install
+# has to put them somewhere. They are data rather than programs of the build: nothing compiles them and nothing in
+# the package reads them.
+install(DIRECTORY graphs/ DESTINATION "${CMAKE_INSTALL_DATADIR}/gr4-adsb/graphs")
+install(PROGRAMS tools/adsb_listen.py tools/adsb_control.py DESTINATION "${CMAKE_INSTALL_DATADIR}/gr4-adsb/tools")
