@@ -190,6 +190,11 @@ needs nothing on its command line; a run from the build tree wants `--plugin-dir
 where the build tree holds the library instead. `--plugin-dir` replaces both defaults and may be
 given more than once.
 
+The first of the two follows `CMAKE_INSTALL_PREFIX`. The second is where CMake found the SDK, which
+is not where the program will read it from when a build installs somewhere other than it runs:
+`-DGR4ADSB_SDK_PLUGIN_DIR=<dir>` names that directory instead, and a cross build that finds the SDK
+in a staging tree gives the target's own. The configure line prints both.
+
 ## Two machines
 
 The receiver and the display do not have to be the same computer. `adsb` is one process with the
