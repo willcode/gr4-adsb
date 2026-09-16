@@ -221,32 +221,43 @@ with the cycles, put 8 and 0.5 back.
 
 ### Running the two halves
 
-Either half is run by `adsb_run`, the package's second program: it loads a GNU Radio 4 graph file
-and runs it. It names no block, no setting and no chain — the file names the blocks, the plugin
-directories supply them — so it runs any graph file, not only these four.
+Either half is run by `gnuradio_4_0_graph_run`, GNU Radio 4's own runner of a graph file, which is
+installed with the framework. It names no block, no setting and no chain — the file names the
+blocks, the plugin directories supply them — so it runs any graph file, not only these four. This
+package builds no runner of its own.
 
 ```
 on the machine with the radio, where /opt/gr4-adsb holds this package and /opt/gnuradio4 the SDK:
-    /opt/gr4-adsb/bin/adsb_run --graph /opt/gr4-adsb/graphs/adsb-hackrf.yaml \
-        --plugin-dir /opt/gnuradio4/lib/gnuradio-4/plugins
+    /opt/gnuradio4/bin/gnuradio_4_0_graph_run --graph /opt/gr4-adsb/graphs/adsb-hackrf.yaml
 
-at the desk, with <receiver> edited into the endpoint of graphs/adsb-printer.yaml:
-    ./build/app/adsb_run --graph graphs/adsb-printer.yaml
+at the desk, with <receiver> edited into the endpoint of graphs/adsb-printer.yaml, from the
+GNU Radio 4 this package was built against:
+    gnuradio_4_0_graph_run --graph graphs/adsb-printer.yaml
 ```
 
-`adsb_run` always searches the plugin directory of the GNU Radio 4 it was built against, which is
-where every block these graphs name lives; `--plugin-dir DIR` adds another directory, `--seconds S`
-bounds a run, `--show NAME` prints a block's settings and counters when the run ends
-(`--show packet_sink` on the capture half, `--show packet_source` on the printer half), and
-`--verbose` lists the libraries the plugin directories loaded and the registry keys they brought.
-`--graph -` reads the graph file from standard input. Exit codes are the same as `adsb`'s: 0 on a
-clean stop, 2 on a bad command line and 1 on a graph that would not load or would not run.
+Its own usage text names the options:
 
-**A cross-built `adsb_run` needs `--plugin-dir` on the machine it runs on**, which is why the first
-command above carries one. The directory compiled in is the one CMake found the SDK at, and for a
-cross build that is a staging prefix on the build machine, a path the target does not have. A build
-made on the machine that runs it needs nothing; `adsb --verbose` and `adsb --file` have the same
-dependency for the same reason.
+```
+  --graph <file>     the graph to run, in the GRC YAML dialect; - reads it from standard input
+  --plugin-dir <dir> a directory to load plugins and block libraries from; repeatable
+  --seconds <s>      stop the graph after <s> seconds; without it the run ends when the graph does
+  --show <name>      print the settings of the block named <name> when the run ends; repeatable
+  --verbose          list what each plugin directory loaded and the keys it brought
+  --help, -h         this text
+```
+
+`--show packet_sink` on the capture half and `--show packet_source` on the printer half are the two
+worth having: each prints that block's settings and its counters when the run ends. Exit status is
+the same as `adsb`'s — 0 on a clean stop, 2 on a command line that cannot be used and 1 on a graph
+that could not be read, loaded or run — and SIGINT and SIGTERM stop a run as `--seconds` does.
+
+**Neither command needs `--plugin-dir`.** The tool always searches the plugin directory of its own
+installation, which is where every block these graphs name lives, and
+`GNURADIO4_PLUGIN_DIRECTORIES`, the colon-separated list the framework's plugin loader reads, adds
+more. That is the difference from a runner built inside this package, which compiled in the
+directory CMake found the SDK at and so had to be told the real one on any machine it had been
+cross-built for. `adsb --verbose` still has that dependency, because it is this package's own
+program; see its `--plugin-dir` in Running.
 
 The printer prints the same lines `adsb` prints, because it is the same `AdsbPrinter`. `to_stdout`
 is what makes it print: the block publishes its line as a record, and the application's own
@@ -277,9 +288,11 @@ receiver's stream, the frame's octets in hex, and every metadata key the decoder
 It needs `pyzmq` and nothing else — `pip install pyzmq`, or `dnf install python3-zmq`, or `apt
 install python3-zmq`. There is no way to do without it: ZeroMQ is a wire protocol over the socket,
 not a datagram format, so a raw socket would have to implement its handshake and framing. What the
-script does implement is the envelope inside it, from the published header table in
-`docs/specs/spec-packet-transport.md`: four frames — the subscription topic, a 32-byte little-endian
-header, a YAML metadata document, and the payload.
+script does implement is the envelope inside it, `gr::network::PacketEnvelope`: four frames — the
+subscription topic, a 32-byte little-endian header whose first four bytes are the magic `GR4P` and
+whose last four are a CRC over the header itself, a YAML metadata document, and the payload. GNU
+Radio 4's own `PacketEnvelope.hpp` states that header field by field and is the reference the script
+was written from.
 
 Both readers can run at once. The sink publishes; any number of subscribers take what it publishes.
 
@@ -294,7 +307,7 @@ on the machine with the radio:
     GR4CP_PORT=20081 /opt/gr4cp/bin/gr4cp_server
 
 at the desk:
-    ./build/app/adsb_run --graph graphs/adsb-printer.yaml   # started first, as always
+    gnuradio_4_0_graph_run --graph graphs/adsb-printer.yaml   # started first, as always
     python3 tools/adsb_control.py --server http://<receiver>:20081 \
         --graph graphs/adsb-hackrf.yaml --seconds 60 --show packet_sink
 ```
@@ -330,6 +343,9 @@ Requirements:
 - **SoapySDR** and a driver for the radio, again only for live devices.
 - **The network family** (`GR4_ENABLE_NETWORK` on, with libzmq and the cppzmq header), for the
   two-machine graphs alone: the one-process `adsb` does not use it.
+- **`gnuradio_4_0_graph_run`**, the framework's own runner of a graph file, again for the
+  two-machine graphs alone. It is installed with GNU Radio 4, in the same prefix; this package
+  builds no runner.
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -339,8 +355,9 @@ cmake --build build
 cmake --install build
 ```
 
-`-DGR4ADSB_WARNINGS_AS_ERRORS=OFF` relaxes `-Werror`. The install writes `adsb` and `adsb_run` to
-`<prefix>/bin` and nothing else; the blocks the chain is built from are installed with GNU Radio 4.
+`-DGR4ADSB_WARNINGS_AS_ERRORS=OFF` relaxes `-Werror`. The install writes `adsb` to `<prefix>/bin`
+and nothing else; the blocks the chain is built from, and the runner the graph files are run by, are
+installed with GNU Radio 4.
 
 The package ships no test. What a test of this receiver would exercise — the framing, the message
 decode and the rendering of a line — is tested in GNU Radio 4 beside each of those blocks, and what
@@ -349,20 +366,23 @@ is checked end to end, and a capture large enough to carry frames is too large t
 
 ## Layout
 
-`app/` holds both programs: `adsb.cpp`, which is the one-process application and `ConsoleSink`
-together, and `adsb_run.cpp`, the graph runner. Everything else in the chain belongs to GNU Radio 4
-and is used as installed.
+`app/` holds `adsb` alone: `adsb.cpp`, the one-process application and `ConsoleSink` together.
+Everything else in the chain belongs to GNU Radio 4 and is used as installed, and so is the runner
+the graph files are run by.
 
 `graphs/` holds the same chain as graph files, cut in two at the decoded frame, and `tools/` the two
 Python programs that go with them — a reader of the receiver's socket and a client of a control
 plane. Neither directory is compiled and neither is installed by the build; they are text. A graph
-file is read by `adsb_run` or by a control plane, and the Python programs by `python3`.
+file is read by `gnuradio_4_0_graph_run` or by a control plane, and the Python programs by
+`python3`.
 
 `adsb` names every block type and builds its chain with `emplaceBlock<T>`, the direct, statically
 checked route, which is what a program that knows its own chain needs; `--verbose` is the only place
-it opens the registry. The registry is for a program that does not know its chain, and `adsb_run` is
-that program: it builds every graph out of the keys the plugin directories brought, which is why one
-binary runs either half of the split and needs no rebuild when a graph file changes.
+it opens the registry. The registry is for a program that does not know its chain, and
+`gnuradio_4_0_graph_run` is that one: it builds every graph out of the keys the plugin directories
+brought, which is why one program runs either half of the split and needs no rebuild when a graph
+file changes. That program belongs to GNU Radio 4 rather than to this package, because nothing in it
+is about ADS-B.
 
 ## Next
 

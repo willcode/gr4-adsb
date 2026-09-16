@@ -12,10 +12,10 @@ One line per frame: the time the frame sits at in the receiver's stream, the fra
 every metadata key the decoder wrote, which is where the ICAO address, the downlink format, the message
 type and whatever that type carried arrive.
 
-The wire is gr::network::PacketEnvelope, docs/specs/spec-packet-transport.md Part I: four ZeroMQ frames
--- the subscription topic, a 32-byte little-endian header, a YAML metadata document, and the payload.
-Nothing below imports a GNU Radio module; the format is readable from its own specification, which is
-the point of having one.
+The wire is gr::network::PacketEnvelope, which GNU Radio 4's own PacketEnvelope.hpp states field by
+field: four ZeroMQ frames -- the subscription topic, a 32-byte little-endian header, a YAML metadata
+document, and the payload. Nothing below imports a GNU Radio module; the header is a fixed table of
+fixed-width little-endian fields and is readable from that table alone, which is the point of it.
 
 pyzmq is the one requirement and there is no way around it: ZeroMQ is a wire protocol (ZMTP) over the
 socket, not a datagram format, so a raw socket would have to implement the handshake and the framing.
@@ -43,7 +43,7 @@ LITTLE_ENDIAN = 0
 YAML_PMT = 1
 CRC32_RESIDUE = 0x2144DF1C  # CRC-32/ISO-HDLC over an intact header, its own check word included
 
-# gr::pmt::ValueType's numeric codes, as spec-packet-transport.md section 3.3 restates them so that a
+# gr::pmt::ValueType's numeric codes, as PacketEnvelope.hpp's itemSizeOf restates them so that a
 # reader needs no framework header. Only the sizes are needed here; the payload is bytes either way.
 ITEM_SIZES = {2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 2, 8: 4, 9: 8, 10: 4, 11: 8, 12: 8, 13: 16}
 ITEM_UINT8 = 6
