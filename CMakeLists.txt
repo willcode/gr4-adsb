@@ -50,7 +50,7 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
-# app/ holds the whole package: the application with the ConsoleSink it ends its chain with. Every other block in the
-# chain is GNU Radio 4's own and is used as installed, and so is the runner the graph files under graphs/ are run by,
-# gnuradio_4_0_graph_run.
+# app/ holds the whole package: the application with the ConsoleSink it ends its chain with. Every other block in
+# the chain is GNU Radio 4's own and is used as installed, and so is the runner the graph files under graphs/ are
+# run by, rungraph.
 add_subdirectory(app)

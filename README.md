@@ -221,18 +221,18 @@ with the cycles, put 8 and 0.5 back.
 
 ### Running the two halves
 
-Either half is run by `gnuradio_4_0_graph_run`, GNU Radio 4's own runner of a graph file, which is
-installed with the framework. It names no block, no setting and no chain — the file names the
-blocks, the plugin directories supply them — so it runs any graph file, not only these four. This
-package builds no runner of its own.
+Either half is run by `rungraph`, GNU Radio 4's own runner of a graph file, which is installed
+with the framework. It names no block, no setting and no chain — the file names the blocks, the
+plugin directories supply them — so it runs any graph file, not only these four. This package
+builds no runner of its own.
 
 ```
 on the machine with the radio, where /opt/gr4-adsb holds this package and /opt/gnuradio4 the SDK:
-    /opt/gnuradio4/bin/gnuradio_4_0_graph_run --graph /opt/gr4-adsb/graphs/adsb-hackrf.yaml
+    /opt/gnuradio4/bin/rungraph --graph /opt/gr4-adsb/graphs/adsb-hackrf.yaml
 
 at the desk, with <receiver> edited into the endpoint of graphs/adsb-printer.yaml, from the
 GNU Radio 4 this package was built against:
-    gnuradio_4_0_graph_run --graph graphs/adsb-printer.yaml
+    rungraph --graph graphs/adsb-printer.yaml
 ```
 
 Its own usage text names the options:
@@ -307,7 +307,7 @@ on the machine with the radio:
     GR4CP_PORT=20081 /opt/gr4cp/bin/gr4cp_server
 
 at the desk:
-    gnuradio_4_0_graph_run --graph graphs/adsb-printer.yaml   # started first, as always
+    rungraph --graph graphs/adsb-printer.yaml   # started first, as always
     python3 tools/adsb_control.py --server http://<receiver>:20081 \
         --graph graphs/adsb-hackrf.yaml --seconds 60 --show packet_sink
 ```
@@ -343,9 +343,8 @@ Requirements:
 - **SoapySDR** and a driver for the radio, again only for live devices.
 - **The network family** (`GR4_ENABLE_NETWORK` on, with libzmq and the cppzmq header), for the
   two-machine graphs alone: the one-process `adsb` does not use it.
-- **`gnuradio_4_0_graph_run`**, the framework's own runner of a graph file, again for the
-  two-machine graphs alone. It is installed with GNU Radio 4, in the same prefix; this package
-  builds no runner.
+- **`rungraph`**, the framework's own runner of a graph file, again for the two-machine graphs
+  alone. It is installed with GNU Radio 4, in the same prefix; this package builds no runner.
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -373,16 +372,14 @@ the graph files are run by.
 `graphs/` holds the same chain as graph files, cut in two at the decoded frame, and `tools/` the two
 Python programs that go with them — a reader of the receiver's socket and a client of a control
 plane. Neither directory is compiled and neither is installed by the build; they are text. A graph
-file is read by `gnuradio_4_0_graph_run` or by a control plane, and the Python programs by
-`python3`.
+file is read by `rungraph` or by a control plane, and the Python programs by `python3`.
 
 `adsb` names every block type and builds its chain with `emplaceBlock<T>`, the direct, statically
 checked route, which is what a program that knows its own chain needs; `--verbose` is the only place
-it opens the registry. The registry is for a program that does not know its chain, and
-`gnuradio_4_0_graph_run` is that one: it builds every graph out of the keys the plugin directories
-brought, which is why one program runs either half of the split and needs no rebuild when a graph
-file changes. That program belongs to GNU Radio 4 rather than to this package, because nothing in it
-is about ADS-B.
+it opens the registry. The registry is for a program that does not know its chain, and `rungraph`
+is that one: it builds every graph out of the keys the plugin directories brought, which is why one
+program runs either half of the split and needs no rebuild when a graph file changes. That program
+belongs to GNU Radio 4 rather than to this package, because nothing in it is about ADS-B.
 
 ## Next
 
