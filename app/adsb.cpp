@@ -341,18 +341,16 @@ int main(int argc, char** argv) {
 
         // The file source reads on a thread of its own and takes the size of each read from the bound on its output
         // port. An unbounded port reports SIZE_MAX samples, which is not a size any read can publish, so the bound
-        // is required: 64 ki samples is the read size, and a ring eight reads deep leaves room for a whole read
-        // most of the time. When it does not, the reader waits for the graph to drain the ring.
-        constexpr std::size_t kReaderChunk = 1UZ << 16U;
-        source.out.max_samples             = kReaderChunk;
-        if (!source.out.resizeBuffer(8UZ * kReaderChunk).has_value()) {
-            std::println(stderr, "adsb: could not size the file source's output ring");
-            return 1;
-        }
+        // is required, and it is half the edge rather than the whole of it: connect() resizes the port to the
+        // edge's own count whatever resizeBuffer was told, so a read as large as the edge could only ever be
+        // published into a ring the graph had emptied first. 64 ki int16 is the edge -- 33 ms of a 2 MS/s stream
+        // at two int16 a sample -- and a read is half of it, so one read can be consumed while the next arrives.
+        constexpr std::size_t kReaderRing = 1UZ << 16U;
+        source.out.max_samples            = kReaderRing / 2UZ;
 
         auto& pair = flow.emplaceBlock<gr::blocks::basic::InterleavedToComplex<std::int16_t, std::complex<float>>>();
         std::println(stderr, "adsb: {} at {:.3f} MS/s, threshold {}, {} phase steps at a coarse ratio of {}", options.file, static_cast<double>(options.rate) / 1e6, options.threshold, options.phaseSteps, options.coarseRatio);
-        wired = flow.connect<"out", "interleaved">(source, pair).has_value() && flow.connect<"out", "in">(pair, framer).has_value();
+        wired = flow.connect<"out", "interleaved">(source, pair, gr::EdgeParameters{.minBufferSize = kReaderRing}).has_value() && flow.connect<"out", "in">(pair, framer).has_value();
     } else {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
