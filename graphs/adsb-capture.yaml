@@ -11,7 +11,8 @@ blocks:
   - id: gr::blocks::fileio::BasicFileSource<int16>
     parameters:
       name: capture_file
-      file_name: !!str "/home/jwl/gnuradio-claude/recordings/ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data"
+      # the recording to read, interleaved 16-bit I/Q, relative to the directory the graph is run in
+      file_name: !!str "capture.cs16"
   - id: gr::blocks::basic::Convert<int16, float32>
     parameters:
       name: widen

@@ -18,8 +18,7 @@ earlier frame from that address has given one.
 
 ## Quick start
 
-The package builds against an installed GNU Radio 4; see [Building](#building) for what that has
-to include.
+The package builds against an installed GNU Radio 4; see Building for what that has to include.
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -44,11 +43,10 @@ likely to open this way.
 ./build/app/adsb --device "driver=uhd,type=b200" --rate 4e6
 ```
 
-Once a device streams, add what it needs: the RTL-SDR a gain or its AGC, the HackRF a high gain, and
-on a device whose default filter is narrower than the pulses, the analog bandwidth (see Running). On a
-small computer add `--phase-steps 1 --coarse-ratio 1` as well: the framer's sub-sample phase search
-(see How it works) costs more than a Raspberry Pi 3 core has at 2 MS/s, and with it off the chain
-keeps up.
+Once a device streams, add what it needs: the RTL-SDR a gain or its AGC, the HackRF a high gain,
+and on a device whose default filter is narrower than the pulses, the analog bandwidth (see
+Running). On a small computer add `--phase-steps 1 --coarse-ratio 1`, which turns the framer's
+sub-sample phase search off.
 
 ## How it works
 
@@ -62,54 +60,48 @@ keeps up.
   source, file:  BasicFileSource<int16_t> ──► InterleavedToComplex
 ```
 
-**`PpmFramer`** reads frames out of the sample stream. Pulse-position modulation puts one pulse
-per bit period, in the first half for a one and the second for a zero, so a bit is decided by
-comparing the two halves of one period against each other: there is no carrier to acquire and no
-clock to recover. The framer nominates a position wherever the preamble's four pulses stand out
-from the gaps by at least `--threshold`, reads the frame there, and checks the 24-bit parity. Only
-a frame whose parity checks consumes its own window; every other nomination advances the search by
-one sample, so a false nomination cannot hide a real frame behind it.
+**`PpmFramer`** reads frames out of the sample stream. Pulse-position modulation puts one pulse per
+bit period, in the first half for a one and the second for a zero, so a bit is decided by comparing
+the two halves of one period against each other: there is no carrier to acquire and no clock to
+recover. The framer nominates a position wherever the preamble's four pulses stand out from the
+gaps by at least `--threshold`, reads the frame there, and checks the 24-bit parity. Only a frame
+whose parity checks consumes its own window; every other nomination advances the search by one
+sample, so a false nomination cannot hide a real frame behind it.
 
 **`ModeSDecode`** reads the downlink message into typed metadata and leaves the frame's octets as
 the payload, so nothing the frame said is lost. **`AdsbPrinter`** renders one line of text per
-record and publishes it as a record of its own. Those three are this package's own, in `blocks/` and
-in the namespace `adsb`, built into one block library that a graph runner loads from a plugin
-directory. **`ConsoleSink`** is defined in `app/`, writes the lines to stdout, and is the only block
-in the chain that assumes a console; it is not in the library and so cannot be named from a graph
-file, which is what `AdsbPrinter`'s `to_stdout` is for.
+record and publishes it as a record of its own. Those three are this package's own, in `blocks/`
+and in the namespace `adsb`, built into one block library that a graph runner loads from a plugin
+directory. **`ConsoleSink`** is defined in `app/`, writes the lines to stdout, and is the only
+block in the chain that assumes a console; it is not in the library and so cannot be named from a
+graph file, which is what `AdsbPrinter`'s `to_stdout` is for.
 
-| block | registry key | what it reads and writes |
-|---|---|---|
-| `PpmFramer` | `adsb::PpmFramer<complex<float32>>`, `adsb::PpmFramer<float32>` | samples or magnitudes in, one record per frame out |
-| `ModeSDecode` | `adsb::ModeSDecode` | a frame's record in, the same octets with typed metadata out |
-| `AdsbPrinter` | `adsb::AdsbPrinter` | a decoded record in, one rendered line out as a record |
+The registry keys, which a graph file names and `adsb --verbose` prints:
 
-Those keys are what a graph file names and what `adsb --verbose` prints, and the library that brings
-them is `libAdsbDemoBlocksShared.so`. `blocks/README.md` states the record the three pass between
-them, field by field.
+- `adsb::PpmFramer<complex<float32>>` and `adsb::PpmFramer<float32>` — samples or magnitudes in,
+  one record per frame out
+- `adsb::ModeSDecode` — a frame's record in, the same octets with typed metadata out
+- `adsb::AdsbPrinter` — a decoded record in, one rendered line out as a record
 
-**The sample rate must be an even integer multiple of 1 MHz.** A Mode S slot is half a
-microsecond, so the rate has to make a slot a whole number of samples. The framer refuses any other
-rate rather than resampling silently: 2, 4, 6 and 8 MS/s are all fine, 2.4 MS/s is not. Higher is
-better here, and 2 MS/s is a weak floor — expect fewer frames and many more parity failures than at
-4 or 6 MS/s from the same antenna. An RTL-SDR tops out below 4 MS/s, so 2 MS/s is its only rate.
+The library that brings them is `libAdsbDemoBlocksShared.so`. `blocks/README.md` states the record
+the three pass between them, field by field.
+
+**The sample rate must be an even integer multiple of 1 MHz.** A Mode S slot is half a microsecond,
+so the rate has to make a slot a whole number of samples. The framer refuses any other rate rather
+than resampling silently: 2, 4, 6 and 8 MS/s are all fine, 2.4 MS/s is not. A higher rate decodes
+more of what the antenna hears; an RTL-SDR tops out below 4 MS/s, so 2 MS/s is its only rate.
 
 **The framer decides each position at the sub-sample phase of its preamble.** A burst does not
-arrive on the sample clock, and a pulse that straddles two samples splits its energy between a pulse
-slot and a gap slot — the gap slots being what the shape test measures the pulses against, so a bad
-sample phase lowers the numerator and raises the denominator at once. Each position therefore passes
-a cheap test at integer positions first, at `--threshold` times `--coarse-ratio`, and every
-candidate is then measured again at `--phase-steps` offsets spanning one sample period, on the
-signal interpolated from the complex samples. The best offset has to reach the full `--threshold`,
-and it decides the bits as well; it travels on the record as `sample_phase`, so a frame's position
-in the stream is `sample_start + sample_phase`. This is why the framer takes complex samples rather
-than magnitudes: a magnitude stream does not carry what the interpolation reads.
-
-The search helps most where a pulse is oversampled, from about two samples a slot up, because there
-the interpolation has something to work with. At one sample a slot the gain is smaller and depends
-on the receiver's own front end. It costs interpolation work on every candidate the coarse test
-passes, and the noise floor sets how many that is; raise `--coarse-ratio` if a run cannot keep up.
-`--phase-steps 1` turns the search off and decides every position at the integer sample.
+arrive on the sample clock, and a pulse that straddles two samples splits its energy between a
+pulse slot and a gap slot, which is what the shape test measures the pulses against. Each position
+therefore passes a cheap test at integer positions first, at `--threshold` times `--coarse-ratio`,
+and every candidate is then measured again at `--phase-steps` offsets spanning one sample period,
+on the signal interpolated from the complex samples. The best offset has to reach the full
+`--threshold`, and it decides the bits as well; it travels on the record as `sample_phase`, so a
+frame's position in the stream is `sample_start + sample_phase`. This is why the framer takes
+complex samples rather than magnitudes: a magnitude stream does not carry what the interpolation
+reads. The search costs interpolation work on every candidate the coarse test passes, so raise
+`--coarse-ratio` if a run cannot keep up, and `--phase-steps 1` turns it off.
 
 **Analog bandwidth matters more than sample rate.** A Mode S pulse is 0.5 µs and needs several MHz
 of analog bandwidth to keep its edges. A receiver whose front end defaults to a rate-derived filter
@@ -126,17 +118,17 @@ block wants, so a bare `--device hackrf` works too.
 | option | default | what it sets |
 |---|---|---|
 | `--device STR` | — | SoapySDR device string |
-| `--file PATH` | — | replay a capture instead of opening a device |
+| `--file PATH` | — | replay a capture instead of a device |
 | `--frequency HZ` | 1090e6 | center frequency |
 | `--rate HZ` | 4e6 | sample rate, an even multiple of 1 MHz |
 | `--bandwidth HZ` | device | analog RF bandwidth |
 | `--gain DB` | device | receive gain |
 | `--agc on\|off` | off | ask for the device's own AGC |
-| `--threshold R` | 2 | preamble nomination ratio, greater than one |
+| `--threshold R` | 2 | nomination ratio, greater than one |
 | `--phase-steps N` | 8 | offsets per candidate; 1 turns the search off |
 | `--coarse-ratio R` | 0.5 | share of the threshold for the integer test |
 | `--seconds N` | 0 | stop after N seconds; 0 runs to the end |
-| `--verbose` | off | list the registry keys the plugin directories bring, then run |
+| `--verbose` | off | print the registry keys the plugins bring, then run |
 | `--plugin-dir DIR` | built in | where `--verbose` loads from; repeatable |
 
 Exit codes are 0 on a clean stop, 2 on a bad command line and 1 on a graph error, each with the
@@ -155,40 +147,34 @@ which.
 **Leave `--gain` off on an SDRplay.** `--gain` is SoapySDR's overall gain, and the SDRplay driver
 (SoapySDRPlay3) has no such thing: it exposes two gain-reduction elements, `IFGR` (20 to 59 dB,
 ignored while the driver's AGC is on, which it is by default) and `RFGR`, the LNA state. SoapySDR
-spreads an overall gain across those elements, and a request near 40 dB lands the highest LNA state;
-above 1 GHz an RSP1A has fewer states than that, and the device then refuses the whole activation
-with `Init() failed: sdrplay_api_Fail`. Rate, frequency and bandwidth alone stream cleanly. 6 MS/s
-with 6 MHz of bandwidth, and 4 MS/s with 5 MHz, are good operating points on an RSP1A.
+spreads an overall gain across those elements, and a request near 40 dB asks for the highest LNA
+state; above 1 GHz an RSP1A has fewer states than that, and the device then refuses the whole
+activation with `Init() failed: sdrplay_api_Fail`. Rate, frequency and bandwidth alone stream
+cleanly. 6 MS/s with 6 MHz of bandwidth, and 4 MS/s with 5 MHz, are good operating points on an
+RSP1A.
 
 **On an RTL-SDR give a gain, or `--agc on`.** The dongle's own default is 0 dB, which hears nothing;
-`--gain 40` is a working figure. With a fixed tuner gain the 8-bit samples can still sit low in their
-range, so that gap slots and bit decisions rest on one or two quantization steps; `--agc on` turns on
-the RTL2832's digital gain as well as the tuner's and lifts the signal into the converter's range.
-`--agc off` is the default and asks for nothing; the block only ever turns AGC on, so there is no way
-from here to force it off on a device that enables it by itself. An SDRplay runs its AGC by default,
-which suits ADS-B.
+`--gain 40` is a working figure. With a fixed tuner gain the 8-bit samples can still sit low in
+their range, so that gap slots and bit decisions rest on one or two quantization steps; `--agc on`
+turns on the RTL2832's digital gain as well as the tuner's and lifts the signal into the
+converter's range. `--agc off` is the default and asks for nothing; the block only ever turns AGC
+on, so there is no way from here to force it off on a device that enables it by itself. An SDRplay
+runs its AGC by default, which suits ADS-B.
 
-**A HackRF needs `--gain 100` or thereabouts.** The driver opens the radio with 16 dB on the LNA and
-16 dB on the VGA, which leaves the noise floor below one step of the 8-bit converter, so nothing is
-heard; at 40 dB still nothing, at 70 dB only the nearest aircraft. `--gain` is SoapySDR's overall
-gain and the HackRF driver splits it across the amplifier, the LNA and the VGA — 100 dB lands as
-LNA 31, AMP 14, VGA 55 — and 110 dB overloads the front end. Leave `--bandwidth` to the driver unless
-a measurement says otherwise.
+**A HackRF needs `--gain 100` or thereabouts.** The driver opens the radio with 16 dB on the LNA
+and 16 dB on the VGA, which leaves the noise floor below one step of the 8-bit converter. `--gain`
+is SoapySDR's overall gain and the HackRF driver splits it across the amplifier, the LNA and the
+VGA — 100 dB lands as LNA 31, AMP 14, VGA 55 — and 110 dB overloads the front end. Leave
+`--bandwidth` to the driver unless a measurement says otherwise.
 
-**`--verbose` opens every shared block library in the plugin directories through `gr::PluginLoader`
-and prints the registry keys they add.** It names each library and how many registrations it
-carries, then lists the keys, sorted; among them are `adsb::PpmFramer<complex<float32>>`,
-`adsb::ModeSDecode` and `adsb::AdsbPrinter`, the three blocks this chain builds directly, brought by
-this package's own library. Each block is entered under its type name and under its alias, so a
-library adds fewer keys than it reports registrations. The chain itself never uses the registry, so
-the keys printed are exactly what the libraries brought, and the rest of the run is unchanged.
-
-Two directories are compiled in: this package's own plugin directory and the GNU Radio 4 one this
-build was configured against, each `<prefix>/lib/gnuradio-4/plugins`, or `lib64` on a distribution
-that puts libraries there. Both are where an install puts things, so an installed `adsb --verbose`
-needs nothing on its command line; a run from the build tree wants `--plugin-dir build/blocks`,
-where the build tree holds the library instead. `--plugin-dir` replaces both defaults and may be
-given more than once.
+**`--verbose` opens every shared block library in the plugin directories through
+`gr::PluginLoader` and prints the registry keys they add**, then runs. Each block is entered under
+its type name and under its alias, so a library adds fewer keys than it reports registrations. Two
+directories are compiled in: this package's own plugin directory and the GNU Radio 4 one this build
+was configured against, each `<prefix>/lib/gnuradio-4/plugins`, or `lib64` on a distribution that
+puts libraries there. An installed `adsb --verbose` therefore needs nothing on its command line; a
+run from the build tree wants `--plugin-dir build/blocks`, where the build tree holds the library
+instead. `--plugin-dir` replaces both defaults and may be given more than once.
 
 The first of the two follows `CMAKE_INSTALL_PREFIX`. The second is where CMake found the SDK, which
 is not where the program will read it from when a build installs somewhere other than it runs:
@@ -203,162 +189,143 @@ has been decoded, so the radio can sit on a small machine near the antenna and t
 happen at a desk.
 
 ```
-  near the antenna                                        at the desk
-  ───────────────────────────────────────────────         ──────────────────────────────────────
-  radio ─► PpmFramer ─► ModeSDecode ─► DataSetToPacket     ZmqPacketSource ─► PacketToDataSet
-                                            │                      ▲                │
-                                            ▼                      │                ▼
-                                       ZmqPacketSink ═══════ tcp:5560 ═══════┘   AdsbPrinter
+  near the antenna
+    radio ─► PpmFramer ─► ModeSDecode ─► DataSetToPacket ─► ZmqPacketSink
+                                                                   │
+                                                             tcp:5560
+                                                                   │
+  at the desk                                                      ▼
+    AdsbPrinter ◄─ PacketToDataSet ◄─ ZmqPacketSource ◄────────────╯
 ```
 
 **The decode happens at the radio and crosses the network once.** What travels is the decoder's own
 record — the frame's octets and the typed metadata it read out of them, the ICAO address, the
-message type, the altitude, the position — so the far end renders and never re-decodes, and a second
-reader of the same socket sees exactly what the first one sees. The samples do not travel: 2 MS/s of
-complex floats is 16 MB/s and there is no reason to carry it.
-
-### The four graphs
+message type, the altitude, the position — so the far end renders and never re-decodes, and a
+second reader of the same socket sees exactly what the first one sees. The samples do not travel:
+2 MS/s of complex floats is 16 MB/s and there is no reason to carry it.
 
 | file | where it runs | what it is |
 |---|---|---|
-| `graphs/adsb-hackrf.yaml` | at the antenna | the capture half on a HackRF, which is the better of the two radios here |
-| `graphs/adsb-rtl.yaml` | at the antenna | the same on an RTL-SDR, which is what most people have |
-| `graphs/adsb-capture.yaml` | anywhere | the same reading the recorded capture instead of a radio, for trying the split with no radio at all |
-| `graphs/adsb-printer.yaml` | at the desk | the printer half, which prints the lines the one-process application prints |
+| `graphs/adsb-hackrf.yaml` | at the antenna | the capture half on a HackRF |
+| `graphs/adsb-rtl.yaml` | at the antenna | the capture half on an RTL-SDR |
+| `graphs/adsb-capture.yaml` | anywhere | the same from a recorded capture |
+| `graphs/adsb-printer.yaml` | at the desk | the printer half |
+
+`graphs/adsb-capture.yaml` reads `capture.cs16` from the directory the graph is run in; put the
+path to a recording of your own in its `file_name`, and give the framer that recording's rate.
 
 **The gain decides whether the receiver hears anything, and the two radios want very different
-figures.** A HackRF at 1090 MHz needs far more gain than it does lower down: nothing at 40 dB, the
-nearest aircraft at 70, and the sky at 100 — which SoapyHackRF splits as LNA 31, AMP 14, VGA 55. An
-RTL-SDR's own default is 0 dB, which also hears nothing; 40 dB is its working figure, and on the same
-antenna it hears far less than the HackRF. Hence the order: the HackRF graph is the one to run, and
-the RTL graph is kept because the dongle is common.
+figures.** A HackRF at 1090 MHz needs far more gain than it does lower down: about 100 dB, which
+SoapyHackRF splits as LNA 31, AMP 14, VGA 55. An RTL-SDR's own default is 0 dB, which also hears
+nothing; 40 dB is its working figure.
 
-**The two framer settings differ from the application's defaults, and the reason is the Raspberry
-Pi 3's processor.** `adsb` defaults to `--phase-steps 8 --coarse-ratio 0.5`: each candidate position
-is re-tested at eight sub-sample offsets, which finds frames whose preamble falls between two
-samples and is worth having at 2 MS/s. On a Pi 3 it is not affordable — with it the chain runs at a
-fifth of real time and the radio overflows. The graphs therefore carry `phase_steps: 1` and
-`coarse_ratio: 1.0`, the fine search off, at which the Pi keeps up at the full rate. On a machine
-with the cycles, put 8 and 0.5 back.
+**The two framer settings in the graphs differ from the application's defaults.** `adsb` defaults
+to `--phase-steps 8 --coarse-ratio 0.5`: each candidate position is re-tested at eight sub-sample
+offsets, which finds frames whose preamble falls between two samples. That costs more than a
+machine as small as a Raspberry Pi 3 has at 2 MS/s, so the graphs carry `phase_steps: 1` and
+`coarse_ratio: 1.0`, the sub-sample search off. On a machine with the cycles, put 8 and 0.5 back.
 
-### Running the two halves
-
-Either half is run by `rungraph`, GNU Radio 4's own runner of a graph file, which is installed
-with the framework. It names no block, no setting and no chain — the file names the blocks, the
-plugin directories supply them — so it runs any graph file, not only these four. This package
-builds no runner of its own.
+Either half is run by `rungraph`, GNU Radio 4's own runner of a graph file, which is installed with
+the framework. It names no block, no setting and no chain — the file names the blocks, the plugin
+directories supply them — so it runs any graph file, not only these four. This package builds no
+runner of its own.
 
 ```
-on the machine with the radio, where /opt/gr4-adsb holds this package and /opt/gnuradio4 the SDK:
-    /opt/gnuradio4/bin/rungraph --graph /opt/gr4-adsb/share/gr4-adsb/graphs/adsb-hackrf.yaml \
-                                --plugin-dir /opt/gr4-adsb/lib/gnuradio-4/plugins
+on the machine with the radio, where /opt/gr4-adsb holds this package and
+/opt/gnuradio4 the SDK:
+    /opt/gnuradio4/bin/rungraph \
+        --graph /opt/gr4-adsb/share/gr4-adsb/graphs/adsb-hackrf.yaml \
+        --plugin-dir /opt/gr4-adsb/lib/gnuradio-4/plugins
 
-at the desk, with <receiver> edited into the endpoint of adsb-printer.yaml, from the GNU Radio 4
-this package was built against:
+at the desk, with <receiver> edited into the endpoint of adsb-printer.yaml:
     rungraph --graph <prefix>/share/gr4-adsb/graphs/adsb-printer.yaml \
              --plugin-dir <prefix>/lib/gnuradio-4/plugins
 ```
 
-Its own usage text names the options:
+Its options are `--graph <file>`, the graph to run in the GRC YAML dialect, with `-` reading it
+from standard input; `--plugin-dir <dir>`, repeatable; `--seconds <s>`, a run bound; `--show
+<name>`, which prints the settings and counters of the block named `<name>` when the run ends, also
+repeatable; `--verbose`; and `--help`. `--show packet_sink` on the capture half and `--show
+packet_source` on the printer half are the two worth having. Exit status is the same as `adsb`'s,
+and SIGINT and SIGTERM stop a run as `--seconds` does.
 
-```
-  --graph <file>     the graph to run, in the GRC YAML dialect; - reads it from standard input
-  --plugin-dir <dir> a directory to load plugins and block libraries from; repeatable
-  --seconds <s>      stop the graph after <s> seconds; without it the run ends when the graph does
-  --show <name>      print the settings of the block named <name> when the run ends; repeatable
-  --verbose          list what each plugin directory loaded and the keys it brought
-  --help, -h         this text
-```
-
-`--show packet_sink` on the capture half and `--show packet_source` on the printer half are the two
-worth having: each prints that block's settings and its counters when the run ends. Exit status is
-the same as `adsb`'s — 0 on a clean stop, 2 on a command line that cannot be used and 1 on a graph
-that could not be read, loaded or run — and SIGINT and SIGTERM stop a run as `--seconds` does.
-
-**Both commands name one plugin directory, this package's own.** The tool always searches the plugin
-directory of its own installation, which is where every block these graphs name but the three ADS-B
-ones lives; those three are in this package's library, under this package's prefix, which the tool
-knows nothing about. `--plugin-dir` is repeatable and adds a directory to the search;
-`GNURADIO4_PLUGIN_DIRECTORIES`, the colon-separated list the framework's plugin loader reads, does
-the same for a whole shell, which is the shorter way when several commands follow each other:
+**Both commands name one plugin directory, this package's own.** The tool always searches the
+plugin directory of its own installation, which is where every block these graphs name but the
+three ADS-B ones lives; those three are in this package's library, under this package's prefix,
+which the tool knows nothing about. `GNURADIO4_PLUGIN_DIRECTORIES`, the colon-separated list the
+framework's plugin loader reads, does the same for a whole shell:
 
 ```
 export GNURADIO4_PLUGIN_DIRECTORIES=/opt/gr4-adsb/lib/gnuradio-4/plugins
-/opt/gnuradio4/bin/rungraph --graph /opt/gr4-adsb/share/gr4-adsb/graphs/adsb-printer.yaml
+/opt/gnuradio4/bin/rungraph \
+    --graph /opt/gr4-adsb/share/gr4-adsb/graphs/adsb-printer.yaml
 ```
 
-`adsb` needs neither, because both directories it loads from are compiled into it; see
-`--plugin-dir` in Running.
+`adsb` needs neither, because both directories it loads from are compiled into it.
 
-The printer prints the same lines `adsb` prints, because it is the same `AdsbPrinter`. `to_stdout`
-is what makes it print: the block publishes its line as a record, and the application's own
-`ConsoleSink` — which writes those records to a terminal — is not a registered block and so cannot
-be named from a graph file.
+The printer half prints the same lines `adsb` prints, because it is the same `AdsbPrinter`.
+`to_stdout` is what makes it print: the block publishes its line as a record, and the application's
+own `ConsoleSink` is not a registered block and so cannot be named from a graph file.
 
 **Start the reading end first.** A ZeroMQ publisher discards what it sends before a subscriber has
 connected, so a receiver started first will have published its first frames into an empty room.
 
-### The small script
+## The two Python programs
 
-`tools/adsb_listen.py` is the other reader of the same socket, and the demonstration that the
-packets are readable by something that is not GNU Radio 4:
+`tools/adsb_listen.py` is the other reader of the capture half's socket, for a program that is not
+GNU Radio 4:
 
 ```
 python3 tools/adsb_listen.py --endpoint tcp://<receiver>:5560
 ```
 
-`--topic` is the subscription prefix (`adsb`, as the graphs publish it); `--seconds N` or `--count N`
-bounds the run, and without either it reads until interrupted. One line per frame: the time in the
-receiver's stream, the frame's octets in hex, and every metadata key the decoder wrote.
+`--topic` is the subscription prefix (`adsb`, as the graphs publish it); `--seconds N` or
+`--count N` bounds the run, and without either it reads until interrupted. One line per frame: the
+time in the receiver's stream, the frame's octets in hex, and every metadata key the decoder wrote.
 
 ```
-     2.767  8DAA1BAA592E206EF883BEB1DE82  protocol mode_s/adsb  mode_s_format 17  mode_s_icao AA1BAA
-            adsb_type_code 11  adsb_message airborne_position  adsb_altitude_ft 3600  ...  crc_ok true
+     2.767  8DAA1BAA592E206EF883BEB1DE82  protocol mode_s/adsb
+            mode_s_format 17  mode_s_icao AA1BAA  adsb_type_code 11
+            adsb_message airborne_position  adsb_altitude_ft 3600  crc_ok true
 ```
 
 It needs `pyzmq` and nothing else — `pip install pyzmq`, or `dnf install python3-zmq`, or `apt
-install python3-zmq`. There is no way to do without it: ZeroMQ is a wire protocol over the socket,
-not a datagram format, so a raw socket would have to implement its handshake and framing. What the
-script does implement is the envelope inside it, `gr::network::PacketEnvelope`: four frames — the
-subscription topic, a 32-byte little-endian header whose first four bytes are the magic `GR4P` and
-whose last four are a CRC over the header itself, a YAML metadata document, and the payload. GNU
-Radio 4's own `PacketEnvelope.hpp` states that header field by field and is the reference the script
-was written from.
+install python3-zmq`. ZeroMQ is a wire protocol over the socket rather than a datagram format, so a
+raw socket would have to implement its handshake and framing. What the script does implement is the
+envelope inside it, `gr::network::PacketEnvelope`: four frames — the subscription topic, a 32-byte
+little-endian header whose first four bytes are the magic `GR4P` and whose last four are a CRC over
+the header itself, a YAML metadata document, and the payload. GNU Radio 4's own
+`PacketEnvelope.hpp` states that header field by field and is the reference the script was written
+from.
 
 Both readers can run at once. The sink publishes; any number of subscribers take what it publishes.
 
-### Under a control plane
-
-The reading end does not have to reach into the receiving machine to start it. `gr4cp_server`, the
-GNU Radio 4 control plane, runs sessions from graph files it is given over HTTP, so the receiving
-machine runs one server and nothing else, and the desk decides what it runs and when.
+`tools/adsb_control.py` runs a graph as a session of `gr4cp_server`, the GNU Radio 4 control plane,
+so the receiving machine runs one server and the desk decides what it runs and when.
 
 ```
 on the machine with the radio:
-    GR4CP_PORT=20081 \
-    GNURADIO4_PLUGIN_DIRECTORIES=/opt/gnuradio4/lib/gnuradio-4/plugins:/opt/gr4-adsb/lib/gnuradio-4/plugins \
-    /opt/gr4cp/bin/gr4cp_server
+    export GNURADIO4_PLUGIN_DIRECTORIES=\
+    /opt/gnuradio4/lib/gnuradio-4/plugins:/opt/gr4-adsb/lib/gnuradio-4/plugins
+    GR4CP_PORT=20081 /opt/gr4cp/bin/gr4cp_server
 
-at the desk:
-    rungraph --graph adsb-printer.yaml --plugin-dir <prefix>/lib/gnuradio-4/plugins  # started first
+at the desk, the printer half started first:
     python3 adsb_control.py --server http://<receiver>:20081 \
         --graph adsb-hackrf.yaml --seconds 60 --show packet_sink
 ```
 
 `adsb_control.py` posts the graph file as a session (`--name` names it; the default is the file's
-base name), starts it, reads the settings and counters of each `--show` block when the run ends, and
-stops and deletes the session on the way out; without `--seconds` the session runs until the script
-is interrupted. It needs Python 3 and nothing else, because all it sends is text.
+base name), starts it, reads the settings and counters of each `--show` block when the run ends,
+and stops and deletes the session on the way out; without `--seconds` the session runs until the
+script is interrupted. It needs Python 3 and nothing else, because all it sends is text.
 
 The server takes its port from `GR4CP_PORT` and listens on every interface, so a machine on an
-untrusted network needs a firewall rule on that port and on 5560. Its block directories are compiled
-in and `GNURADIO4_PLUGIN_DIRECTORIES` overrides them, which is why the command above sets it: these
-graphs need two directories, the SDK's own for most of the chain and this package's for the three
-ADS-B blocks. **The server and the block libraries it loads have to come from one GNU Radio 4
-prefix**: a plugin built against another one puts two builds of the framework in one process, and
-the catalog that reads the plugin's blocks either skips them or stops the server. This package's
-library is a plugin like any other, so it has to have been built against the GNU Radio 4 the server
-was.
+untrusted network needs a firewall rule on that port and on 5560. Its block directories are
+compiled in and `GNURADIO4_PLUGIN_DIRECTORIES` overrides them, which is why the command above sets
+it: these graphs need two directories, the SDK's own for most of the chain and this package's for
+the three ADS-B blocks. **The server and the block libraries it loads have to come from one GNU
+Radio 4 prefix**: a plugin built against another one puts two builds of the framework in one
+process, and the catalog that reads the plugin's blocks either skips them or stops the server.
 
 The control plane starts and stops the receiver; it does not carry its output. The frames still
 leave on the graph's own socket, to the printer half or to `adsb_listen.py`.
@@ -369,8 +336,7 @@ Requirements:
 
 - **GNU Radio 4**, core, library and blocks installed into one prefix, with the library's
   pulse-position framing scanner, `gr::digital::PpmScanner`, which this package's framer runs on,
-  and the core's `gr_add_block_library`, which builds `blocks/` into the package's plugin. No ADS-B
-  family is wanted: GNU Radio 4 carries none, and the three blocks are here.
+  and the core's `gr_add_block_library`, which builds `blocks/` into the package's plugin.
 - **The SDR family**, for live devices. The blocks project builds and exports `gnuradio4::gr-sdr`
   only when `GR4_ENABLE_SDR` is on, and that is off by default. Without it this package still
   configures and builds, and `adsb` offers `--file` alone. The configure line says which of the two
@@ -395,53 +361,42 @@ cmake --install build
 
 `-DGR4ADSB_WARNINGS_AS_ERRORS=OFF` relaxes `-Werror`. The install writes `adsb` to `<prefix>/bin`,
 the block library to `<prefix>/lib/gnuradio-4/plugins`, and the graph files and the two Python
-programs to `<prefix>/share/gr4-adsb`. The rest of the chain, and the runner the graph files are run
-by, are installed with GNU Radio 4.
+programs to `<prefix>/share/gr4-adsb`. The rest of the chain, and the runner the graph files are
+run by, are installed with GNU Radio 4.
 
-`ctest` runs three tests, one beside each block: the framing, the message decode and the rendering
-of a line. Every frame in them is built field by field from the standard rather than taken from a
-capture, so none needs a recording or a radio, and the three together take under a second. What they
-do not cover is the application and `ConsoleSink`; a replay over a recorded capture is how those are
-checked end to end, and a capture large enough to carry frames is too large to ship.
+## Tests
+
+```
+ctest --test-dir build
+```
+
+Three tests, one beside each block: the framing, the message decode and the rendering of a line.
+Every frame in them is built field by field from the standard rather than taken from a capture, so
+none needs a recording or a radio. What they do not cover is the application and `ConsoleSink`; a
+replay over a recorded capture is how those are checked end to end, and a capture large enough to
+carry frames is too large to ship.
 
 ## Layout
 
 `blocks/` holds the three ADS-B blocks: the headers under `include/adsb/`, one test beside each in
 `test/`, and the pulse-position scanner's benchmark in `benchmarks/`. The headers are compiled
-twice — into the block library, whose generated units register the blocks under their keys, and into
-whatever names the type directly, which is `adsb` and the tests.
+twice — into the block library, whose generated units register the blocks under their keys, and
+into whatever names the type directly.
 
 `app/` holds `adsb`: `adsb.cpp`, the one-process application and `ConsoleSink` together. Everything
-in the chain that is not in `blocks/` belongs to GNU Radio 4 and is used as installed, and so is the
-runner the graph files are run by.
+in the chain that is not in `blocks/` belongs to GNU Radio 4 and is used as installed, and so is
+the runner the graph files are run by.
 
-`graphs/` holds the same chain as graph files, cut in two at the decoded frame, and `tools/` the two
-Python programs that go with them — a reader of the receiver's socket and a client of a control
+`graphs/` holds the same chain as graph files, cut in two at the decoded frame, and `tools/` the
+two Python programs that go with them — a reader of the receiver's socket and a client of a control
 plane. Neither is compiled; they are text, and the install puts both under
-`<prefix>/share/gr4-adsb`. A graph file is read by `rungraph` or by a control plane, and the Python
-programs by `python3`.
+`<prefix>/share/gr4-adsb`.
 
 `adsb` names every block type and builds its chain with `emplaceBlock<T>`, the direct, statically
-checked route, which is what a program that knows its own chain needs; `--verbose` is the only place
-it opens the registry. The registry is for a program that does not know its chain, and `rungraph`
-is that one: it builds every graph out of the keys the plugin directories brought, which is why one
-program runs either half of the split and needs no rebuild when a graph file changes. That program
-belongs to GNU Radio 4 rather than to this package, because nothing in it is about ADS-B.
-
-## Next
-
-Two components are not built or wired here, because they are not specified yet. The attachment point
-for each is:
-
-- **A map display**, on the decoded record stream: `ModeSDecode`'s output, ahead of `AdsbPrinter`,
-  where position, altitude, callsign and velocity are typed metadata on the record and nothing has
-  to be parsed back out of a rendered line.
-- **A waterfall**, on the sample stream ahead of `PpmFramer`, the last point where every sample is
-  present and still complex. A spectrum display taps the same place; a magnitude display puts its
-  own `gr::blocks::basic::Abs<std::complex<float>>` on that tap rather than in the framer's path.
-
-Adding either takes one more `emplaceBlock` and one more `connect` at the point named; the existing
-chain does not change.
+checked route, which is what a program that knows its own chain needs; `--verbose` is the only
+place it opens the registry. The registry is for a program that does not know its chain, and
+`rungraph` is that one: it builds every graph out of the keys the plugin directories brought, which
+is why one program runs either half of the split and needs no rebuild when a graph file changes.
 
 ## License
 
