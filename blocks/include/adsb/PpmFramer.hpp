@@ -158,7 +158,7 @@ framing; samples past that bound are dropped and counted, oldest first.
             throw gr::exception("profile is required and has no default; 'mode_s' is the one defined");
         }
         if (slotsFor(sample_rate.value) == 0UZ) {
-            throw gr::exception(std::format("sample_rate must be an even integer multiple of 1 MHz so that a half-microsecond slot is a whole number of samples, got {} Hz; resample upstream instead", sample_rate.value));
+            throw gr::exception(std::format("sample_rate must be an even integer multiple of 1 MHz, got {} Hz", sample_rate.value));
         }
         rebuild();
         _work.reserve(_scanner.phasedWindowSamples() + kWorkReserve);
@@ -179,7 +179,7 @@ framing; samples past that bound are dropped and counted, oldest first.
             throw gr::exception(std::format("threshold is the ratio of the least pulse slot to the greatest gap and must exceed one, got {}", threshold));
         }
         if (phase_steps == 0U) {
-            throw gr::exception("phase_steps is the number of sub-sample offsets a candidate is tested at and must be at least one, which is the offset zero the integer positions already are");
+            throw gr::exception(std::format("phase_steps is the number of sub-sample offsets a candidate is tested at and must be at least one, got {}", phase_steps.value));
         }
         if (!(coarse_ratio > 0.F) || coarse_ratio > 1.F) {
             throw gr::exception(std::format("coarse_ratio scales the threshold the coarse test admits a candidate at and must lie in (0, 1], got {}", coarse_ratio));
