@@ -237,7 +237,7 @@ void usage() {
         return std::nullopt;
     }
     if (!(options.coarseRatio > 0.F) || options.coarseRatio > 1.F) {
-        std::println(stderr, "adsb: --coarse-ratio must lie in (0, 1], because a coarse test stricter than the fine one would refuse what the fine one would keep, got {}", options.coarseRatio);
+        std::println(stderr, "adsb: --coarse-ratio must lie in (0, 1], got {}", options.coarseRatio);
         return std::nullopt;
     }
     if (options.frequency <= 0.0 || options.seconds < 0.0 || options.bandwidth.value_or(1.0) <= 0.0) {

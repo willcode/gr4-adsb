@@ -155,7 +155,7 @@ framing; samples past that bound are dropped and counted, oldest first.
 
     void start() {
         if (profile.value.empty()) {
-            throw gr::exception("profile is required and has no default: a pulse-position framing is an interoperability fact, and a silent one would be a silent assumption");
+            throw gr::exception("profile is required and has no default; 'mode_s' is the one defined");
         }
         if (slotsFor(sample_rate.value) == 0UZ) {
             throw gr::exception(std::format("sample_rate must be an even integer multiple of 1 MHz so that a half-microsecond slot is a whole number of samples, got {} Hz; resample upstream instead", sample_rate.value));
@@ -176,13 +176,13 @@ framing; samples past that bound are dropped and counted, oldest first.
             throw gr::exception(std::format("profile must be 'mode_s', got '{}'", profile.value));
         }
         if (threshold <= 1.F) {
-            throw gr::exception(std::format("threshold is the ratio of the least pulse slot to the greatest gap and must exceed one, because a ratio of one or less nominates on flat noise, got {}", threshold));
+            throw gr::exception(std::format("threshold is the ratio of the least pulse slot to the greatest gap and must exceed one, got {}", threshold));
         }
         if (phase_steps == 0U) {
             throw gr::exception("phase_steps is the number of sub-sample offsets a candidate is tested at and must be at least one, which is the offset zero the integer positions already are");
         }
         if (!(coarse_ratio > 0.F) || coarse_ratio > 1.F) {
-            throw gr::exception(std::format("coarse_ratio scales the threshold the coarse test admits a candidate at and must lie in (0, 1], because a coarse test stricter than the fine one would refuse what the fine one would keep, got {}", coarse_ratio));
+            throw gr::exception(std::format("coarse_ratio scales the threshold the coarse test admits a candidate at and must lie in (0, 1], got {}", coarse_ratio));
         }
 
         _work.clear();
