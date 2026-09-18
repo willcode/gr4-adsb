@@ -41,8 +41,7 @@ One framer record in, the same octets out with the message read into metadata.
 A frame is decoded **only where the input record's `crc_ok` is true.** `PpmFramer` writes that key
 on long frames alone, so a short-format nomination, which carries no self-checking parity, and a
 long frame whose remainder was not zero both cross with their own metadata otherwise untouched, `protocol`
-naming which of the two they are. Reading fields out of octets nothing vouched for is how a
-decoder reports an aircraft that is not there.
+naming which of the two they are.
 
 | key                         | type     | on                | meaning                                                    |
 | --------------------------- | -------- | ----------------- | ---------------------------------------------------------- |
@@ -109,8 +108,8 @@ address least recently seen giving way when it is full, and a pair whose halves 
 in time than `pair_seconds` is refused and counted. A pair straddling a longitude zone boundary
 resolves to nothing rather than to something wrong, and the next pair resolves.
 
-A frame whose pair did not resolve still carries its own `adsb_cpr_*` fields, so the position
-stays a consumer's to compute if it knows a reference position this block does not.
+A frame whose pair did not resolve still carries its own `adsb_cpr_*` fields, so a consumer that
+knows a reference position can compute the position from them.
 
 | setting        | default | meaning                                                  |
 | -------------- | ------- | -------------------------------------------------------- |
@@ -133,17 +132,16 @@ is remembered per address, in a table of `table_size` entries bounded the same w
 aircraft names itself in one message and reports its position in another.
 
 The block **reads only the typed keys `ModeSDecode` wrote**, never the octets, except to show a
-frame the decoder would not read — which prints its protocol and its hex instead, that being all
-it may be believed about. So the line and a network peer's structured view of the same record
-cannot disagree.
+frame the decoder would not read, which prints its protocol and its hex instead. So the line and a
+structured view of the same record cannot disagree.
 
 The published record's `protocol` is `text/adsb` and its payload carries no trailing newline; the
 input record's keys all cross beneath, so a consumer can still filter on the address or the
 altitude the line was rendered from. `source_id` is deliberately not written: the record-metadata
 vocabulary gives that key to the receiver, as the operator's name for it.
 
-`to_stdout`, off by default, additionally writes each line to standard output, which is what a
-headless runner with no consumer attached wants.
+`to_stdout`, off by default, also writes each line to standard output, which is what a run with no
+consumer attached wants.
 
 ## Tests
 
