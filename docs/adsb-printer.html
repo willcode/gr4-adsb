@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADS-B printer half</title>
+<style>
+:root { color-scheme: light dark; --fg: #1a1a1a; --bg: #ffffff; --muted: #5a6270; --rule: #d5d9e0; --panel: #f5f6f8; --accent: #1f5fa9; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #e6e6e6; --bg: #14171c; --muted: #9aa4b2; --rule: #2c313a; --panel: #1c2027; --accent: #7fb2f0; }
+}
+* { box-sizing: border-box; }
+body { margin: 0 auto; padding: 2rem 1.25rem 4rem; max-width: 60rem; background: var(--bg); color: var(--fg);
+       font: 15px/1.6 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 2rem 0 0.75rem; }
+h1 { font-size: 1.9rem; margin-top: 0; padding-bottom: 0.4rem; border-bottom: 2px solid var(--rule); }
+h2 { font-size: 1.4rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule); }
+h3 { font-size: 1.15rem; }
+h4, h5, h6 { font-size: 1rem; color: var(--muted); }
+p, ul { margin: 0.6rem 0; }
+ul { padding-left: 1.4rem; }
+a { color: var(--accent); }
+code, pre { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; font-size: 0.87em; }
+code { background: var(--panel); padding: 0.1em 0.35em; border-radius: 3px; }
+pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 5px; padding: 0.9rem 1rem; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+div.table { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; }
+th, td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; text-align: left; vertical-align: top; }
+th { background: var(--panel); font-weight: 600; }
+tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, transparent); }
+</style>
+</head>
+<body>
+<h1>ADS-B printer half</h1>
+<h2>Summary</h2>
+<ul>
+<li><strong>Blocks at the top level</strong>: 4</li>
+<li><strong>Connections at the top level</strong>: 3</li>
+<li><strong>Subgraphs, all depths</strong>: 0</li>
+</ul>
+<h2>Blocks</h2>
+<div class="table">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Kind</th><th>Unique name</th><th>Parameters</th><th>Meta information</th></tr>
+</thead>
+<tbody>
+<tr><td>packet_source</td><td>gr::blocks::network::ZmqPacketSource&lt;uint8&gt;</td><td>block</td><td></td><td>bind: false<br>endpoint: &quot;tcp://127.0.0.1:5560&quot;<br>max_message_bytes: 65536<br>name: &quot;packet_source&quot;<br>pattern: &quot;sub&quot;<br>topic: &quot;adsb&quot;</td><td></td></tr>
+<tr><td>to_record</td><td>gr::blocks::basic::PacketToDataSet&lt;uint8&gt;</td><td>block</td><td></td><td>name: &quot;to_record&quot;<br>signal_label: &quot;adsb&quot;</td><td></td></tr>
+<tr><td>printer</td><td>adsb::AdsbPrinter</td><td>block</td><td></td><td>name: &quot;printer&quot;<br>table_size: 256<br>to_stdout: true</td><td></td></tr>
+<tr><td>console</td><td>gr::blocks::basic::DataSetSink&lt;uint8&gt;</td><td>block</td><td></td><td>name: &quot;console&quot;<br>signal_name: &quot;adsb-lines&quot;</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2>Connections</h2>
+<div class="table">
+<table>
+<thead>
+<tr><th>From</th><th>Port</th><th>To</th><th>Port</th><th>Minimum buffer</th></tr>
+</thead>
+<tbody>
+<tr><td>packet_source</td><td>out</td><td>to_record</td><td>in</td><td></td></tr>
+<tr><td>to_record</td><td>out</td><td>printer</td><td>in</td><td></td></tr>
+<tr><td>printer</td><td>out</td><td>console</td><td>in</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2>Diagram</h2>
+<pre class="mermaid">
+flowchart LR
+    gb0["packet_source&lt;br/&gt;gr::blocks::network::ZmqPacketSource&lt;uint8&gt;"]
+    gb1["to_record&lt;br/&gt;gr::blocks::basic::PacketToDataSet&lt;uint8&gt;"]
+    gb2["printer&lt;br/&gt;adsb::AdsbPrinter"]
+    gb3["console&lt;br/&gt;gr::blocks::basic::DataSetSink&lt;uint8&gt;"]
+    gb0 -- "out to in" --&gt; gb1
+    gb1 -- "out to in" --&gt; gb2
+    gb2 -- "out to in" --&gt; gb3
+</pre>
+</body>
+</html>
