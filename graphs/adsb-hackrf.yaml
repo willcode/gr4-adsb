@@ -1,29 +1,21 @@
-# The capture half on a live HackRF: what the receiving machine runs, and the better of the two radios here.
+# The capture half of the split receiver on a live HackRF.
 #
 # SoapySource -> PpmFramer -> ModeSDecode -> DataSetToPacket -> ZmqPacketSink
 #
-# adsb-capture.yaml is this graph with the radio replaced by a file, and the three graphs are kept the same
-# from the framer on so that a file run and either radio publish the same packets.
+# What a user changes here: the device gain, the framer's phase_steps and coarse_ratio, and the sink's endpoint.
 #
-# The source is gr::blocks::sdr::SoapySource, which is what app/adsb.cpp opens a device with and therefore the
-# one path that has decoded from these radios.
+# The device is asked for the rate, the frequency and the gain. 2 MS/s is an even integer multiple of 1 MHz, as
+# the framer requires. A HackRF at 1090 MHz needs about 100 dB of gain, which SoapyHackRF splits across its three
+# stages as LNA 31, AMP 14 and VGA 55. rx_bandwidths stays an empty vector, which is how the block is told not to
+# ask at all, as against a zero, which it would apply; the 1.75 MHz the driver picks for this rate is its own
+# floor and is wider than the pulses.
 #
-# What is asked of the device: the rate, the frequency and the gain. 2 MS/s is the rate the framer wants, an
-# even integer multiple of 1 MHz. The gain is the setting that decides whether this receiver hears anything:
-# a HackRF at 1090 MHz needs far more of it than at a lower frequency: about 100 dB, which SoapyHackRF splits
-# across its three stages as LNA 31, AMP 14 and VGA 55; at 40 dB it hears nothing and at 70 dB only the
-# nearest aircraft. rx_bandwidths stays an empty vector, which is how the block is
-# told not to ask at all, as against a zero, which it would apply; the 1.75 MHz the driver picks for this rate
-# is its own floor and is wider than the pulses.
+# phase_steps 1 and coarse_ratio 1.0 turn the framer's sub-sample phase search off, which is what a machine as
+# small as a Raspberry Pi 3 needs to keep up at this rate. A machine with the cycles to spare wants the
+# application's 8 and 0.5, which find frames whose preamble falls between samples.
 #
-# phase_steps and coarse_ratio are not the application's defaults and the README says why: the framer's
-# sub-sample phase search costs more than a Raspberry Pi 3 core has at this rate. With the eight-step search
-# the chain runs at a fifth of real time and the device overflows; with one step -- the fine search off, which
-# is what coarse_ratio 1.0 goes with -- it keeps up at the full rate. A machine with the cycles to spare wants
-# the application's 8 and 0.5 back, which find frames whose preamble falls between samples.
-#
-# The sink binds every interface, because the printer connects from another machine. That port answers to
-# whatever reaches it; a machine on an untrusted network needs a firewall rule on 5560.
+# The sink binds every interface, because the printer connects from another machine; a machine on an untrusted
+# network needs a firewall rule on 5560.
 blocks:
   - id: gr::blocks::sdr::SoapySource<complex<float32>>
     parameters:

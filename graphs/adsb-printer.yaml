@@ -2,19 +2,16 @@
 #
 # ZmqPacketSource -> PacketToDataSet -> AdsbPrinter -> DataSetSink
 #
-# Nothing here knows where the frames were received. The decode happened at the radio; what crosses the network
-# is the decoder's own record, so this end renders and never re-decodes.
+# The decode happened at the radio; what crosses the network is the decoder's own record, so this end renders and
+# never re-decodes.
 #
-# endpoint is the one address that changes when the two halves are on two machines: 127.0.0.1 is the loopback
-# default, and the receiving machine's address goes here instead -- tcp://p25.local:5560 for the Pi.
+# What a user changes here: endpoint, which is 127.0.0.1 for both halves on one machine and the receiving
+# machine's address otherwise.
 #
-# AdsbPrinter publishes its line as a record and, with to_stdout, also writes it to standard output; the sink
-# behind it is a terminal for that record. The application's own ConsoleSink is not a registered block and so
-# cannot be named from a graph file, which is what to_stdout is for.
+# AdsbPrinter publishes its line as a record and, with to_stdout, also writes it to standard output.
 blocks:
-  # max_message_bytes is required and has no default: it bounds what libzmq will allocate for a peer's claim
-  # before this block sees a byte. A Mode S frame is 14 octets and its envelope a few hundred, so 64 KiB is
-  # four decimal orders of headroom and still refuses anything that is not this stream.
+  # max_message_bytes is required and has no default: it bounds what libzmq allocates for a peer's claim before
+  # this block sees a byte. A Mode S frame is 14 octets and its envelope a few hundred.
   - id: gr::blocks::network::ZmqPacketSource<uint8>
     parameters:
       name: packet_source

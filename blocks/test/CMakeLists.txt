@@ -1,6 +1,5 @@
-# The three gates the blocks came with, each one executable of Boost.UT suites. They build their frames field by
-# field from the standard and run short graphs over synthetic streams; none reads a file or opens a radio, and each
-# takes a second or two.
+# One executable of Boost.UT suites per block. They build their frames field by field from the standard and run
+# short graphs over synthetic streams; none reads a file or opens a radio.
 #
 # The blocks are compiled into these tests rather than loaded from the library, so a failure is about a header and
 # not about what a plugin directory held.
@@ -22,6 +21,5 @@ foreach(qa_test IN ITEMS qa_PpmFramer qa_ModeSDecode qa_AdsbPrinter)
   set_tests_properties(${qa_test} PROPERTIES TIMEOUT 60)
 endforeach()
 
-# The decoder's gate carries its records across gr::blocks::basic's two packet adapters, which is the path they take
-# between the two halves of the split receiver.
+# The decoder's test carries its records across gr::blocks::basic's two packet adapters.
 target_link_libraries(qa_ModeSDecode PRIVATE gnuradio4::gr-basic)

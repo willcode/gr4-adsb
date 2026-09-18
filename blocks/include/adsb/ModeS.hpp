@@ -28,23 +28,18 @@
 /**
  * The message layer of the 1090 MHz Mode S downlink, as a record adapter over `DataSet<std::uint8_t>`.
  *
- * A frame reaches `ModeSDecode` after `adsb::PpmFramer` at the `mode_s` profile has read it out of a
- * magnitude stream and checked its parity, so what this block sees is 7 or 14 whole octets and the framer's account
+ * A frame arrives as 7 or 14 whole octets from `adsb::PpmFramer` at the `mode_s` profile, with the framer's account
  * of how they were taken. The framing is ICAO Annex 10 Volume IV; the extended squitter's message formats are
- * RTCA DO-260B, whose ME field occupies bits 33 to 88 of a long frame.
+ * RTCA DO-260B, whose ME field occupies bits 33 to 88 of a long frame. Bit numbering follows the standard: bit 1 is
+ * the most significant bit of the first octet.
  *
- * The decoded fields are metadata and the payload stays the octets, so nothing the frame said is lost and a consumer
- * that speaks the protocol reads the same record as one that does not. Every value is a scalar of the record-metadata
- * vocabulary's transportable types — an integer, a double, a bool or a string — because a metadata map that crosses a
- * process is a wire format, and a sequence does not survive one.
- *
- * Bit numbering follows the standard: bit 1 is the most significant bit of the first octet.
+ * Every decoded field is a metadata scalar of one of the transportable types — an integer, a double, a bool or a
+ * string — and the payload stays the octets, so a record crosses a process whole.
  */
 namespace adsb {
 
-// This module sits outside `gr`, so that its registry keys are this package's own and cannot be taken for a family
-// of the SDK's. These are the framework names the code below is written in; they are declarations rather than a
-// using-directive, so nothing else of `gr` becomes visible through `adsb`.
+// Namespace `adsb`, not `gr`, so the registry keys are this package's own. The framework names below are
+// declarations rather than a using-directive: nothing else of `gr` is visible through `adsb`.
 using gr::Annotated;
 using gr::Async;
 using gr::Block;
@@ -73,8 +68,8 @@ namespace detail {
     return value;
 }
 
-/// @brief The six-bit character set of the identification message, RTCA DO-260B 2.2.3.2. A code the set leaves
-///        unassigned is spelled `#` here and is dropped rather than rendered.
+/// @brief The six-bit character set of the identification message, RTCA DO-260B 2.2.3.2; `#` marks a code the set
+///        leaves unassigned, which is dropped rather than rendered.
 constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ##### ###############0123456789######";
 
 /// @brief The eight-character aircraft identification of a type code 1 to 4 message, its trailing pad removed.
@@ -95,10 +90,9 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
 /// @brief The pressure altitude in feet the AC field's 100 ft code names, or nothing when the code is unassigned.
 ///
 /// ICAO Annex 10 Volume IV, the AC altitude code with its Q bit clear. The twelve bits are, most significant first,
-/// C1 A1 C2 A2 C4 A4 B1 Q B2 D2 B4 D4: the thirteen-bit surveillance field without its M bit, and with D1 absent
-/// because that pulse is only needed above 62 700 ft. The altitude is a count of 500 ft steps in a reflected binary
-/// code on D2 D4 A1 A2 A4 B1 B2 B4, and a 100 ft digit within the step in the three C pulses, which count the other
-/// way on an odd step. Three of the eight C codes are unassigned and the code floor is -1200 ft.
+/// C1 A1 C2 A2 C4 A4 B1 Q B2 D2 B4 D4. The altitude is a count of 500 ft steps in a reflected binary code on
+/// D2 D4 A1 A2 A4 B1 B2 B4, and a 100 ft digit within the step in the three C pulses, which count the other way on
+/// an odd step. Three of the eight C codes are unassigned and the code floor is -1200 ft.
 [[nodiscard]] inline std::optional<std::int32_t> gillhamAltitude(std::uint32_t ac12) noexcept {
     const auto pulse = [ac12](std::size_t position) { return (ac12 >> (12UZ - position)) & 1U; };
 
@@ -126,9 +120,8 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
 
 /// @brief The barometric altitude in feet of the twelve-bit AC field, or nothing where the field states none.
 ///
-/// RTCA DO-260B 2.2.3.2, the altitude of an airborne position message. The Q bit at field position 8 selects the
-/// coding: set, the remaining eleven bits are 25 ft increments offset by -1000 ft; clear, the field is the 100 ft
-/// code above, which transponders in service do send and a decoder reading only the Q set case reports as absent.
+/// RTCA DO-260B 2.2.3.2. The Q bit at field position 8 selects the coding: set, the remaining eleven bits are 25 ft
+/// increments offset by -1000 ft; clear, the field is the 100 ft code above, which transponders in service do send.
 [[nodiscard]] inline std::optional<std::int32_t> baroAltitude(std::uint32_t ac12) noexcept {
     if (ac12 == 0U) {
         return std::nullopt; // the all-zero code states that no altitude is available
@@ -142,9 +135,8 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
 
 /// @brief The number of longitude zones at latitude @p degrees, RTCA DO-260B A.1.7.2.2's NL function.
 ///
-/// The equation is the definition; the two poleward cases and the ceiling of 59 are the values it is defined to take
-/// where it degenerates. The ceiling matters: at the equator the arc cosine's argument is its own cosine, so the
-/// quotient is exactly 60 and rounding alone decides whether the floor reads 59 or 60.
+/// The two poleward cases and the ceiling of 59 are the values the function is defined to take where the equation
+/// degenerates. At the equator the quotient is exactly 60, so the ceiling is what decides whether the floor reads 59.
 [[nodiscard]] inline std::int32_t longitudeZones(double degrees) noexcept {
     constexpr double kZones = 15.0; // NZ, the number of geographic latitude zones in a quadrant
     const double     from   = std::abs(degrees);
@@ -156,10 +148,10 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
     return std::min(59, static_cast<std::int32_t>(std::floor(2.0 * std::numbers::pi / std::acos(1.0 - numerator / (cosine * cosine)))));
 }
 
-/// @brief Floored modulo, which is the remainder the compact position arithmetic is defined over.
+/// @brief Floored modulo, the remainder the compact position arithmetic is defined over.
 ///
-/// `std::fmod` keeps the sign of its left operand, so a negative zone index there puts the aircraft a few hundred
-/// degrees from where it is rather than one zone over.
+/// `std::fmod` keeps the sign of its left operand, which puts a negative zone index hundreds of degrees away rather
+/// than one zone over.
 [[nodiscard]] inline double flooredMod(double value, double modulus) noexcept { return value - modulus * std::floor(value / modulus); }
 
 /// @brief One half of a compact position pair, held until its complement arrives.
@@ -173,7 +165,7 @@ struct CprHalf {
 /// @brief The globally unambiguous position an even and an odd half name, RTCA DO-260B A.1.7.4.
 ///
 /// Nothing is returned when the two halves resolve into different longitude zones, which is what a pair straddling a
-/// zone boundary does: the pair says nothing rather than something wrong, and the next pair resolves.
+/// zone boundary does; the next pair resolves.
 [[nodiscard]] inline std::optional<std::pair<double, double>> globalPosition(const CprHalf& even, const CprHalf& odd) noexcept {
     constexpr double kScale = 131072.0; // 2^17, the encoded fraction of a zone
 
@@ -244,7 +236,7 @@ struct CprHalf {
 /// @brief The address the announced-address formats carry in bits 9 to 32: the all-call reply and the two squitters.
 ///
 /// The remaining downlink formats put the address under the parity rather than in a field, so a frame of one of them
-/// states no address this block may read.
+/// states no address.
 [[nodiscard]] inline bool announcesAddress(std::uint32_t downlinkFormat) noexcept { return downlinkFormat == 11U || downlinkFormat == 17U || downlinkFormat == 18U; }
 
 } // namespace detail
@@ -255,48 +247,43 @@ GR_REGISTER_BLOCK(adsb::ModeSDecode)
 @brief One Mode S frame in, the same octets out with the message read into typed metadata.
 
 The record's items are the frame's octets, unchanged, so the parity the framer checked still covers what the record
-carries and a consumer that wants the frame itself has it. Everything the message says is a metadata key of a
-transportable scalar type — never a rendered line, which fixes a language and a field order at the producer where no
-consumer can change them.
+carries.
 
 A frame is decoded only where the input record's `crc_ok` is true. The framer writes that key on long frames alone,
 so a short-format nomination, which carries no self-checking parity, and a long frame whose remainder was not zero
-both cross with their own metadata otherwise untouched, `protocol` naming which of the two they are. Reading fields out of
-octets nothing vouched for is how a decoder reports an aircraft that is not there.
+both cross with their own metadata otherwise untouched, `protocol` naming which of the two they are.
 
 `protocol` names the stream's sub-kind from general to specific: `mode_s/adsb` on a decoded extended squitter,
 `mode_s` on any other admitted frame, and `mode_s/unchecked` or `mode_s/short` on the two the framer publishes only
-when asked. `mode_s_format` is re-asserted here from the octets under the spelling the framer already writes, so the
-downlink format has one key and not two.
+when asked. `mode_s_format` is re-asserted here from the octets, under the spelling the framer already writes.
 
-Compact position reporting needs two frames: an even and an odd half of one pair name a position, one half alone
-names none. The halves are held per aircraft in a table of `table_size` addresses, the address least recently seen
-giving way when it is full, and a pair whose halves are further apart in time than `pair_seconds` is refused and
-counted. A frame whose pair does not resolve still carries its own encoded halves under `adsb_cpr_*`, so the
-position is a consumer's to compute if it knows more than this block does.
+Compact position reporting needs two frames: an even and an odd half of one pair name a position. The halves are
+held per aircraft in a table of `table_size` addresses, the address least recently seen giving way when it is full,
+and a pair whose halves are further apart in time than `pair_seconds` is refused and counted. A frame whose pair
+does not resolve still carries its own encoded halves under `adsb_cpr_*`.
 */
 struct ModeSDecode : Block<ModeSDecode> {
     using Description = Doc<R""(
 @brief Mode S message decode: one framer record in, its octets out with the downlink message as typed metadata.
 
-The layer above `adsb::PpmFramer`. The framing is ICAO Annex 10 Volume IV and the extended squitter's
-message formats are RTCA DO-260B: the downlink format, the announced address, and on formats 17 and 18 the type
-code and the message it names — the aircraft identification, the barometric altitude in both of its codings, the
-compact position halves and the position a pair of them resolves to, and the airborne velocity.
+The layer above `adsb::PpmFramer`. The framing is ICAO Annex 10 Volume IV and the extended squitter's message
+formats are RTCA DO-260B: the downlink format, the announced address, and on formats 17 and 18 the type code and
+the message it names — the aircraft identification, the barometric altitude in both of its codings, the compact
+position halves and the position a pair of them resolves to, and the airborne velocity.
 
 Every decoded field is a metadata key holding an integer, a double, a bool or a string, and the payload stays the
-frame's octets. A record therefore crosses a process as a packet with nothing lost and nothing to parse twice.
+frame's octets.
 )"">;
 
     PortIn<DataSet<std::uint8_t>, Async>  in;
     PortOut<DataSet<std::uint8_t>, Async> out;
 
-    Annotated<float, "pair_seconds", Unit<"s">, Doc<"greatest age difference between the two halves of a compact position pair; must be finite and greater than zero">, Visible>             pair_seconds{10.f};
-    Annotated<gr::Size_t, "table_size", Doc<"aircraft addresses the position pairing table holds; the least recently seen gives way when it is full, and it must be at least one">, Visible> table_size{256U};
+    Annotated<float, "pair_seconds", Unit<"s">, Doc<"greatest age difference between the two halves of a position pair; finite and greater than zero">, Visible> pair_seconds{10.f};
+    Annotated<gr::Size_t, "table_size", Doc<"aircraft addresses the pairing table holds, least recently seen giving way when full; at least one">, Visible>      table_size{256U};
 
     GR_MAKE_REFLECTABLE(ModeSDecode, in, out, pair_seconds, table_size);
 
-    // Plain members, read by the owning thread and by QA, and reported once at stop().
+    // Totals, read by the owning thread and reported at stop().
     std::uint64_t nFrames       = 0ULL; ///< records that arrived
     std::uint64_t nDecoded      = 0ULL; ///< records whose octets the parity vouched for and whose message was read
     std::uint64_t nPositions    = 0ULL; ///< positions a pair of compact position halves resolved
@@ -304,7 +291,7 @@ frame's octets. A record therefore crosses a process as a packet with nothing lo
     std::uint64_t nUnchecked    = 0ULL; ///< records crossing undecoded, the parity having vouched for nothing
     std::uint64_t nEvicted      = 0ULL; ///< aircraft the pairing table gave up to make room
 
-    /// @brief What one aircraft's address has accumulated, and when the table last touched it.
+    /// @brief One aircraft's position halves, and when the table last touched them.
     struct Aircraft {
         detail::CprHalf even{};
         detail::CprHalf odd{};
@@ -355,7 +342,7 @@ frame's octets. A record therefore crosses a process as a packet with nothing lo
         return work::Status::OK;
     }
 
-    /// @brief The record @p record becomes: its octets, its own facts, and what the message says where this reads it.
+    /// @brief The record @p record becomes: its octets, its own metadata, and the message where this block reads it.
     [[nodiscard]] DataSet<std::uint8_t> decode(const DataSet<std::uint8_t>& record) {
         ++nFrames;
 

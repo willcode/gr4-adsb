@@ -28,15 +28,13 @@
 /**
  * The console renderer of a decoded Mode S stream: one line of text per record, as a record of its own.
  *
- * It reads only the typed keys `ModeSDecode` writes and never the octets, except to show a frame nothing decoded.
- * The line is the payload of the record it publishes, so a console, a file and a network peer are three consumers of
- * one stream and the rendering happens once.
+ * It reads the typed keys `ModeSDecode` writes, and the octets only to show a frame nothing decoded. The line is the
+ * payload of the record it publishes, so the rendering happens once whatever consumes it.
  */
 namespace adsb {
 
-// This module sits outside `gr`, so that its registry keys are this package's own and cannot be taken for a family
-// of the SDK's. These are the framework names the code below is written in; they are declarations rather than a
-// using-directive, so nothing else of `gr` becomes visible through `adsb`.
+// Namespace `adsb`, not `gr`, so the registry keys are this package's own. The framework names below are
+// declarations rather than a using-directive: nothing else of `gr` is visible through `adsb`.
 using gr::Annotated;
 using gr::Async;
 using gr::Block;
@@ -62,35 +60,34 @@ The line is
 
 — the time in seconds from the frame's own `sample_start` and `sample_rate`, the downlink format, the address, what
 the message said, and the aircraft's identification in brackets where an earlier frame from that address gave one.
-A record the decoder left unread prints its protocol and its octets instead, because that is all it may be believed
-about. The published record carries no trailing newline; `to_stdout` writes one after each line it prints.
+A record the decoder left unread prints its protocol and its octets instead. The published record carries no
+trailing newline; `to_stdout` writes one after each line it prints.
 
 The identifications are remembered per address in a table of `table_size` entries, the address least recently seen
-giving way when it is full. That memory is the only state here: a line is otherwise a function of one record.
+giving way when it is full; that table is the only state here.
 
-`protocol` is `text/adsb` — a rendered line, from ADS-B — and every key of the input record crosses beneath it, so a
-consumer can still filter on the address or the altitude it was rendered from. The reserved `source_id` is not
-written: the vocabulary gives that key to the receiver, as the operator's name for it, and a producer claiming it
-would displace what the receiver has to say.
+`protocol` is `text/adsb` and every key of the input record crosses beneath it, so a consumer can still filter on
+the address or the altitude a line was rendered from. The reserved `source_id` is not written: the vocabulary gives
+that key to the receiver, as the operator's name for it.
 */
 struct AdsbPrinter : Block<AdsbPrinter> {
     using Description = Doc<R""(
 @brief Renders each decoded Mode S record as one line of text, published as a record and optionally written to stdout.
 
-The consumer of `adsb::ModeSDecode`. It reads that block's typed metadata keys, never the octets, so the
-line and a network peer's structured view of the same record cannot disagree. `to_stdout` additionally writes each
-line to standard output, which is what a headless runner with no consumer attached wants.
+The consumer of `adsb::ModeSDecode`: it reads that block's typed metadata keys, never the octets, so the line and a
+structured view of the same record cannot disagree. `to_stdout` also writes each line to standard output, which is
+what a run with no consumer attached wants.
 )"">;
 
     PortIn<DataSet<std::uint8_t>, Async>  in;
     PortOut<DataSet<std::uint8_t>, Async> out;
 
-    Annotated<bool, "to_stdout", Doc<"also write each line to standard output, for a run with no consumer attached">, Visible>                                                        to_stdout{false};
-    Annotated<gr::Size_t, "table_size", Doc<"addresses whose identification is remembered; the least recently seen gives way when it is full, and it must be at least one">, Visible> table_size{256U};
+    Annotated<bool, "to_stdout", Doc<"also write each line to standard output, for a run with no consumer attached">, Visible>                                to_stdout{false};
+    Annotated<gr::Size_t, "table_size", Doc<"addresses whose identification is remembered, least recently seen giving way when full; at least one">, Visible> table_size{256U};
 
     GR_MAKE_REFLECTABLE(AdsbPrinter, in, out, to_stdout, table_size);
 
-    // Plain members, read by the owning thread and by QA, and reported once at stop().
+    // Totals, read by the owning thread and reported at stop().
     std::uint64_t nLines   = 0ULL; ///< lines rendered and published
     std::uint64_t nNamed   = 0ULL; ///< lines that carried an identification the table remembered
     std::uint64_t nEvicted = 0ULL; ///< addresses the identification table gave up to make room
@@ -136,14 +133,14 @@ line to standard output, which is what a headless runner with no consumer attach
             std::fflush(stdout);
         }
         if (moved == 0UZ) {
-            // frames are minutes apart on a quiet band, so an empty span is the normal case and has to say so:
-            // OK with nothing consumed and nothing published is what the scheduler reports as a stalled block
+            // an empty span is the normal case: OK with nothing consumed and nothing published is what the
+            // scheduler reports as a stalled block
             return outSpan.size() == 0UZ ? work::Status::INSUFFICIENT_OUTPUT_ITEMS : work::Status::INSUFFICIENT_INPUT_ITEMS;
         }
         return work::Status::OK;
     }
 
-    /// @brief The text record @p record becomes: the line as its items, and every fact of the input beneath it.
+    /// @brief The text record @p record becomes: the line as its items, and the input's own metadata beneath it.
     [[nodiscard]] DataSet<std::uint8_t> render(const DataSet<std::uint8_t>& record) {
         const property_map  none{};
         const property_map& meta = record.meta_information.empty() ? none : record.meta_information[0UZ];
@@ -182,7 +179,7 @@ line to standard output, which is what a headless runner with no consumer attach
         const double                    seconds = detail::timeOf(meta).value_or(0.0);
         const std::optional<gr::Size_t> format  = detail::read<gr::Size_t>(meta, "mode_s_format");
         if (!format.has_value()) {
-            // a frame the decoder would not read: its protocol and its octets are all that may be said about it
+            // a frame the decoder would not read: its protocol and its octets
             const std::string protocol = textOf(meta, "protocol");
             return std::format("{:9.3f}  {}  {}", seconds, protocol.empty() ? std::string("mode_s") : protocol, hexOf(std::span<const std::uint8_t>(record.signal_values)));
         }

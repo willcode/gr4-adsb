@@ -26,9 +26,8 @@
 
 namespace adsb {
 
-// This module sits outside `gr`, so that its registry keys are this package's own and cannot be taken for a family
-// of the SDK's. These are the framework names the code below is written in; they are declarations rather than a
-// using-directive, so nothing else of `gr` becomes visible through `adsb`.
+// Namespace `adsb`, not `gr`, so the registry keys are this package's own. The framework names below are
+// declarations rather than a using-directive: nothing else of `gr` is visible through `adsb`.
 using gr::Annotated;
 using gr::Async;
 using gr::Block;
@@ -48,79 +47,66 @@ namespace work = gr::work;
 GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
 
 /**
- * @brief The block over `gr::digital::PpmScanner`: magnitudes or samples in, one bounded record per published frame out.
+ * @brief The block over `gr::digital::PpmScanner`: magnitudes or samples in, one record per published frame out.
  *
- * Thin by construction. It derives the samples per slot from the rate, holds what the scanner has not yet decided
- * about, turns each reported frame into a record, moves the tags that fell inside it, and counts. Every decision
- * about what a frame is belongs to the kernel.
+ * It derives the samples per slot from the rate, holds the samples the scanner has not yet decided about, turns each
+ * reported frame into a record, and moves the tags that fell inside it. The kernel decides what a frame is.
  *
- * @tparam T `float` for a magnitude stream, `std::complex<float>` for the samples themselves. Only the complex
- *         instantiation can align a frame to the phase it sits on, because only it holds what an interpolation reads.
+ * @tparam T `float` for a magnitude stream, `std::complex<float>` for the samples themselves; only the complex
+ *         instantiation searches sub-sample phase, which needs the samples an interpolation reads.
  */
 template<typename T>
 requires(std::same_as<T, float> || std::same_as<T, std::complex<float>>)
 struct PpmFramer : Block<PpmFramer<T>, NoTagPropagation> {
-    /// @brief Whether this instantiation carries the samples an interpolation needs, and so can align a frame's phase.
+    /// @brief True on the complex instantiation, the one that can search sub-sample phase.
     static constexpr bool kAligns = std::same_as<T, std::complex<float>>;
 
     using Description = Doc<R""(
 @brief Reads pulse-position frames out of a magnitude or complex stream, one `DataSet<uint8_t>` per frame.
 
-The framer for a burst that arrives out of noise with no carrier before it and no stream after it. Pulse-position
-modulation compares the two halves of one bit period with each other, so there is no clock to recover and no
-amplitude to track, and a frame is read wherever the preamble's shape appears. `profile` selects the framing:
-`mode_s` is ICAO Annex 10 Volume IV's 1090 MHz reply, four preamble pulses at 0.0, 1.0, 3.5 and 4.5 microseconds,
-data from 8.0, and a frame of 56 or 112 bits chosen by the downlink format's top bit.
+`profile` selects the framing. `mode_s` is ICAO Annex 10 Volume IV's 1090 MHz reply: preamble pulses at 0.0, 1.0,
+3.5 and 4.5 microseconds, data from 8.0, and a frame of 56 or 112 bits chosen by the downlink format's top bit.
 
-At `float` the input is magnitude, `|x|` and not `|x|^2`: the nomination is a ratio and the bit decision a
-comparison, so both are free of any positive scaling, but `threshold` is a number on magnitude and would be its
-square on power. `gr::blocks::basic::Abs<std::complex<float>>` produces the stream this instantiation wants on its
-`abs` port.
+At `float` the input is magnitude, `|x|` and not `|x|^2`, which is what `threshold` is a ratio of;
+`gr::blocks::basic::Abs<std::complex<float>>` produces that stream on its `abs` port.
 
-At `std::complex<float>` the samples themselves arrive and every position is decided at the sub-sample phase its
-preamble sits on. A pulse whose edges fall between two samples spills part of itself into the neighboring gap slot,
-which is the shape test's own denominator, and at the two samples a bit period the common receivers deliver that is
-the difference between a frame read and a frame missed. So a position first passes a coarse test at
-`threshold * coarse_ratio`, and is then re-tested at `phase_steps` offsets spanning one sample period; the offset
-whose least pulse slot stands highest above its greatest gap slot decides both the nomination and the bits, and
-travels on the record as `sample_phase`. A frame's timing is then `sample_start + sample_phase`: an admitted frame
-takes its window from the first position that passed, which can be the sample before the one its preamble sits
-nearest, and the offset compensates. `phase_steps` and `coarse_ratio` are read only by this instantiation.
+At `std::complex<float>` every position is decided at the sub-sample phase its preamble sits on: a position first
+passes a coarse test at `threshold * coarse_ratio`, and is then re-tested at `phase_steps` offsets spanning one
+sample period. The offset whose least pulse slot stands highest above its greatest gap slot decides both the
+nomination and the bits, and travels on the record as `sample_phase`, a frame's timing being
+`sample_start + sample_phase`. `phase_steps` and `coarse_ratio` are read only by this instantiation.
 
-`sample_rate` must be an even integer multiple of 1 MHz, so a half-microsecond slot is a whole number of samples;
-2 MS/s is the rate the common receivers deliver and anything else resamples upstream. A `sample_rate` tag overrides
-the setting for the samples after it, and a tagged rate that is not such a multiple is a counted refusal that
-leaves the previous rate standing.
+`sample_rate` must be an even integer multiple of 1 MHz, so a half-microsecond slot is a whole number of samples. A
+`sample_rate` tag overrides the setting for the samples after it; a tagged rate that is not such a multiple is a
+counted refusal that leaves the previous rate standing.
 
-The parity is checked here rather than downstream because the remainder decides containment: an admitted frame
-consumes its whole window and no position inside it is nominated, while every other nomination advances the search
-by one sample, so a false nomination cannot swallow the real frame behind it. The remainder travels on every
-record — zero on an admitted frame, and the aircraft address on the formats that transmit the parity XORed with
-one. Short frames carry no self-checking parity and CRC-failed long frames were never vouched for, so neither is
-published unless `emit_short` or `emit_unchecked` asks for it.
+The parity is checked here because the remainder decides containment: an admitted frame consumes its whole window
+and no position inside it is nominated, while every other nomination advances the search by one sample. The
+remainder travels on every record — zero on an admitted frame, and the aircraft address on the formats that transmit
+the parity XORed with one. Short frames carry no self-checking parity and CRC-failed long frames were never vouched
+for, so neither is published unless `emit_short` or `emit_unchecked` asks for it.
 
 The samples not yet decided about are held in a buffer whose bound is fixed at `start()` from the rate and the
-framing, so a consumer that stops taking records cannot grow it with the stream: samples past that bound are dropped
-and counted, oldest first.
+framing; samples past that bound are dropped and counted, oldest first.
 )"">;
 
     PortIn<T>                             in;
     PortOut<DataSet<std::uint8_t>, Async> out;
 
-    Annotated<float, "sample_rate", Unit<"Hz">, Doc<"input rate; required, and an even integer multiple of 1 MHz so a half-microsecond slot is a whole number of samples">, Visible>                            sample_rate = 0.F;
-    Annotated<std::string, "profile", Doc<"the pulse-position framing: 'mode_s'; required, because a framing is an interoperability fact and has no default">, Visible>                                         profile{};
-    Annotated<float, "threshold", Doc<"nomination ratio of the least preamble pulse slot to the greatest gap slot; must exceed one">, Visible>                                                                  threshold      = 2.F;
-    Annotated<gr::Size_t, "phase_steps", Doc<"sub-sample offsets a candidate is re-tested at, spanning one sample period; one turns the fine step off. Read only by the complex instantiation">, Visible>       phase_steps    = 8U;
-    Annotated<float, "coarse_ratio", Doc<"fraction of threshold the integer-position test admits a candidate at, before the fine step decides it; in (0, 1]. Read only by the complex instantiation">, Visible> coarse_ratio   = 0.5F;
-    Annotated<bool, "emit_short", Doc<"publish short-format nominations, whose parity vouches for nothing, with their remainder attached">>                                                                     emit_short     = false;
-    Annotated<bool, "emit_unchecked", Doc<"publish long frames whose remainder is not zero, with crc_ok false">>                                                                                                emit_unchecked = false;
-    Annotated<std::string, "frame_label", Doc<"written under the record's trigger_name key">>                                                                                                                   frame_label    = std::string("mode_s");
+    Annotated<float, "sample_rate", Unit<"Hz">, Doc<"input rate; required, and an even integer multiple of 1 MHz">, Visible>                                       sample_rate = 0.F;
+    Annotated<std::string, "profile", Doc<"the pulse-position framing; required, and 'mode_s' is the one defined">, Visible>                                       profile{};
+    Annotated<float, "threshold", Doc<"nomination ratio of the least preamble pulse slot to the greatest gap slot; must exceed one">, Visible>                     threshold      = 2.F;
+    Annotated<gr::Size_t, "phase_steps", Doc<"sub-sample offsets each candidate is re-tested at; one turns the search off; complex instantiation only">, Visible>  phase_steps    = 8U;
+    Annotated<float, "coarse_ratio", Doc<"fraction of threshold the integer-position test admits a candidate at; in (0, 1]; complex instantiation only">, Visible> coarse_ratio   = 0.5F;
+    Annotated<bool, "emit_short", Doc<"publish short-format nominations, which carry no self-checking parity">>                                                    emit_short     = false;
+    Annotated<bool, "emit_unchecked", Doc<"publish long frames whose remainder is not zero, with crc_ok false">>                                                   emit_unchecked = false;
+    Annotated<std::string, "frame_label", Doc<"written under the record's trigger_name key">>                                                                      frame_label    = std::string("mode_s");
 
     GR_MAKE_REFLECTABLE(PpmFramer, in, out, sample_rate, profile, threshold, phase_steps, coarse_ratio, emit_short, emit_unchecked, frame_label);
 
-    // Counted, stated drops and totals. Plain members, read by the owning thread and by QA, reported once at stop().
+    // Totals and counted drops, read by the owning thread and reported at stop().
     std::uint64_t nSamples        = 0ULL; ///< input samples consumed
-    std::uint64_t nCandidates     = 0ULL; ///< positions whose preamble shape passed the coarse test, of which the nominations are the subset the fine step kept
+    std::uint64_t nCandidates     = 0ULL; ///< positions whose preamble shape passed the coarse test
     std::uint64_t nNominations    = 0ULL; ///< positions whose preamble shape passed the threshold
     std::uint64_t nAdmitted       = 0ULL; ///< long frames whose whole-frame remainder was zero
     std::uint64_t nCrcFailed      = 0ULL; ///< long frames whose remainder was not zero
@@ -128,8 +114,8 @@ and counted, oldest first.
     std::uint64_t nPublished      = 0ULL; ///< records produced for `out`, counted whether or not the port is connected
     std::uint64_t nTagsDropped    = 0ULL; ///< input tags that fell outside every published frame, including the ones still waiting
     std::uint64_t nRateRefused    = 0ULL; ///< sample_rate tags whose value is not an even multiple of 1 MHz
-    std::uint64_t nTailDropped    = 0ULL; ///< samples never decided, because their window never completed, including the ones still held
-    std::uint64_t nOverrunDropped = 0ULL; ///< samples dropped from the working buffer at its bound, because the sink stopped taking records
+    std::uint64_t nTailDropped    = 0ULL; ///< samples whose window never completed, the ones still held included
+    std::uint64_t nOverrunDropped = 0ULL; ///< samples dropped from the working buffer at its bound
 
     /// @brief One input tag waiting for a frame that might contain it, at its absolute input index.
     struct Pending {
@@ -144,24 +130,24 @@ and counted, oldest first.
         const property_map* map = nullptr;
     };
 
-    /// @brief The pending list is bounded by fiat: several tags may share one index, and none of them sizes a buffer.
+    /// @brief Bound on the tags held waiting for a frame; several tags may share one index.
     static constexpr std::size_t kPendingCap = 4096UZ;
     /// @brief Room the working buffer keeps beyond one window, so a whole input span is appended without growing it.
     static constexpr std::size_t kWorkReserve = 1UZ << 16U;
 
     gr::digital::PpmConfig  _framing{};
     gr::digital::PpmScanner _scanner{};
-    /// @brief What the kernel counted under the geometries it has already been reconfigured out of, which zero its own counters.
+    /// @brief What the kernel counted under earlier rates; `prepare()` zeroes its own counters.
     gr::digital::PpmCounters _retired{};
     std::vector<T>           _work{};          ///< input not yet decided, followed by whatever arrived last
-    std::vector<float>       _mags{};          ///< `_work`'s magnitudes, index for index; empty on the magnitude instantiation, where `_work` already is them
+    std::vector<float>       _mags{};          ///< `_work`'s magnitudes, index for index; empty on the magnitude instantiation
     std::size_t              _workStart = 0UZ; ///< absolute input index of `_work`'s first sample
     std::size_t              _slot      = 0UZ; ///< samples per half-bit-period slot, at the rate in force
     float                    _rate      = 0.F; ///< the rate in force, which a tag may replace
     std::vector<Pending>     _pending{};
     std::vector<Arriving>    _arriving{};
     std::uint64_t            _sequence = 0ULL;
-    /// @brief The two drop totals as far as the working thread has already retired them; the counters add what is still held.
+    /// @brief The two drop totals already retired; the counters add what is still held.
     std::uint64_t _tailBanked = 0ULL;
     std::uint64_t _tagsBanked = 0ULL;
 
@@ -184,7 +170,7 @@ and counted, oldest first.
 
     void reset() { rebuild(); }
 
-    /// @brief Rebuilds the scanner from the settings, refusing everything the framing cannot be.
+    /// @brief Rebuilds the scanner from the settings, refusing any the framing cannot take.
     void rebuild() {
         if (!profile.value.empty() && profile.value != std::string_view("mode_s")) {
             throw gr::exception(std::format("profile must be 'mode_s', got '{}'", profile.value));
@@ -224,9 +210,8 @@ and counted, oldest first.
 
     /// @brief Puts the nomination settings onto the kernel. `prepare()` sizes the interpolator from them, so this precedes it.
     void arm() {
-        // The fine step interpolates the samples themselves, and a magnitude stream holds none: one offset there is
-        // the offset zero the integer positions already are, and leaves the kernel's window and its decisions as they
-        // were before there was a fine step at all.
+        // A magnitude stream carries nothing to interpolate, so that instantiation searches the one offset the
+        // integer positions already are.
         _scanner.threshold   = threshold;
         _scanner.phaseSteps  = kAligns ? static_cast<std::size_t>(phase_steps.value) : 1UZ;
         _scanner.coarseRatio = kAligns ? coarse_ratio.value : 1.F;
@@ -282,20 +267,20 @@ and counted, oldest first.
         const auto scan = [&](std::span<const T> arriving) {
             _work.insert(_work.end(), arriving.begin(), arriving.end());
             if constexpr (kAligns) {
-                // the kernel decides on magnitude and interpolates on the samples, so the two travel together; this
-                // is the only place either grows, and the reserve taken at start() is what keeps it off the heap
+                // the kernel decides on magnitude and interpolates on the samples, so the two grow together here,
+                // the only place either grows; the reserve taken at start() keeps that off the heap
                 const std::size_t known = _mags.size();
                 _mags.resize(_work.size());
                 for (std::size_t j = 0UZ; j < arriving.size(); ++j) {
                     _mags[known + j] = std::abs(arriving[j]);
                 }
             }
-            // the span one position needs, guard included: with the fine step off the two are the same number
+            // the span one position needs, guard included
             const std::size_t window = _scanner.phasedWindowSamples();
             std::size_t       base   = 0UZ;
             while (onOut < room && _work.size() - base >= window) {
-                // a slice of `window - 1 + k` samples holds k decidable positions and so at most k frames; when the
-                // sink has room for at least as many frames as the buffer has samples, nothing can bind before its end
+                // a slice of `window - 1 + k` samples holds k decidable positions and so at most k frames; with room
+                // for as many frames as the buffer has samples, nothing can bind before its end
                 const std::size_t available = _work.size() - base;
                 const std::size_t headroom  = room - onOut;
                 const std::size_t slice     = headroom >= available ? available : std::min(available, window - 1UZ + headroom);
@@ -311,8 +296,8 @@ and counted, oldest first.
                 }
                 base += done;
             }
-            // the buffer holds one window plus the reserve and no more, so a sink that stops taking records cannot
-            // grow it with the stream; the oldest samples go, because the newest are the ones still worth deciding
+            // the buffer holds one window and the reserve and no more; the oldest samples go, the newest being the
+            // ones still worth deciding
             const std::size_t capacity = window + kWorkReserve;
             if (_work.size() - base > capacity) {
                 const std::size_t excess = _work.size() - base - capacity;
@@ -355,7 +340,7 @@ and counted, oldest first.
             _workStart = inSpan.streamIndex + tag.at;
             _slot      = slot;
             _rate      = *value;
-            // preparing the kernel for the new geometry zeroes its counters, so the epoch that just closed is banked
+            // preparing the kernel zeroes its counters, so what it counted under the old rate is banked first
             _retired.candidates += _scanner.counters.candidates;
             _retired.nominations += _scanner.counters.nominations;
             _retired.admitted += _scanner.counters.admitted;
@@ -373,7 +358,7 @@ and counted, oldest first.
         nAdmitted    = _retired.admitted + _scanner.counters.admitted;
         nCrcFailed   = _retired.crcFailed + _scanner.counters.crcFailed;
         nShortFormat = _retired.shortFormat + _scanner.counters.shortFormat;
-        // what the buffer and the list still hold is what a stream ending here drops, and only this thread may look
+        // what the buffer and the list still hold is what a stream ending here drops
         nTailDropped = _tailBanked + std::uint64_t{_work.size()};
         nTagsDropped = _tagsBanked + static_cast<std::uint64_t>(std::ranges::count(_pending, false, &Pending::used));
 
@@ -414,10 +399,9 @@ and counted, oldest first.
         }
         meta.insert_or_assign(property_map::key_type("preamble_strong"), pmt::Value(frame.strong));
         meta.insert_or_assign(property_map::key_type("preamble_weak"), pmt::Value(frame.weak));
-        // the frame's timing is `sample_start + sample_phase` and not `sample_start` alone: an admitted frame takes
-        // its window from the first position that passed, which can be the sample before the one its preamble sits
-        // nearest, and this offset in [-0.5, 0.5) compensates. Zero wherever nothing was searched, so the sum is
-        // the timing on either instantiation
+        // an admitted frame takes its window from the first position that passed, which can be the sample before the
+        // one its preamble sits nearest; this offset in [-0.5, 0.5) compensates, and is zero where nothing was
+        // searched, so `sample_start + sample_phase` is the timing on either instantiation
         meta.insert_or_assign(property_map::key_type("sample_phase"), pmt::Value(frame.phase));
 
         auto& events = record.timing_events[0UZ];

@@ -35,7 +35,7 @@ using gr::digital::PpmScanner;
 
 using Record = gr::DataSet<std::uint8_t>;
 
-/// The two instantiations: magnitudes, as this framer has always taken them, and the samples the magnitudes came from.
+/// The two instantiations: magnitudes, and the samples the magnitudes came from.
 using MagFramer = PpmFramer<float>;
 using IqFramer  = PpmFramer<std::complex<float>>;
 
@@ -118,8 +118,7 @@ struct Scanned {
 /**
  * @brief Drives the kernel over @p data presenting @p chunk fresh samples at a time.
  *
- * The undecided tail is presented again with whatever arrives next, which is exactly the contract `consume()`
- * states and what the block does with its own working buffer.
+ * The undecided tail is presented again with whatever arrives next, which is the contract `consume()` states.
  */
 [[nodiscard]] Scanned scan(std::span<const float> data, std::size_t chunk = 0UZ, std::size_t slot = 1UZ, float threshold = 2.F) {
     PpmScanner scanner;
@@ -155,7 +154,7 @@ template<typename TBlock>
     return block;
 }
 
-/// The settings every block case shares, at the 2 MS/s the canonical receivers deliver.
+/// The settings every block case shares, at 2 MS/s.
 [[nodiscard]] gr::property_map modeSSettings(float rate = 2.0e6F) { return {{"profile", std::string("mode_s")}, {"sample_rate", rate}}; }
 
 /// What one drive of the block produced, with the counters it reported.
@@ -360,8 +359,7 @@ constexpr float kCarrier = 0.7F;
  *
  * Rectangular pulses are laid on a grid of `kGrid` samples a slot and averaged over one slot, which is the front end
  * this framer is written for: each sample is half a microsecond of signal integrated. Sampling that grid at one
- * sample a slot delays the burst by @p tau, leaving the frame's first slot at index `lead + tau` — so a scanner
- * reading it at the integer position `lead` has to look @p tau samples ahead to find the shape whole.
+ * sample a slot delays the burst by @p tau, leaving the frame's first slot at index `lead + tau`.
  *
  * @p tau in [-0.5, 0.5), a multiple of `1 / kGrid`, so the grid is sampled and never resampled.
  */
@@ -380,8 +378,8 @@ constexpr float kCarrier = 0.7F;
     }
     slots.insert(slots.end(), trail, 0.F);
 
-    // the running mean over one slot of the grid; the sum is at most `kGrid` ones and the divisor a power of two, so
-    // every rendered value is an exact multiple of 1 / kGrid and two equal offsets render bit for bit alike
+    // the running mean over one slot of the grid; the divisor is a power of two, so every rendered value is an exact
+    // multiple of 1 / kGrid and two equal offsets render bit for bit alike
     std::vector<float> mean(slots.size() * kGrid, 0.F);
     float              running = 0.F;
     for (std::size_t m = 0UZ; m < mean.size(); ++m) {
@@ -474,8 +472,8 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
     };
 
     "the working buffer is bounded when the sink stops taking records"_test = [] {
-        // three hundred anchors end to end, with one record of room a call: the sink saturates on the first frame and
-        // the rest of the span has nowhere to go, so the buffer would grow with the stream if nothing bounded it
+        // three hundred anchors end to end with one record of room a call: the sink saturates on the first frame,
+        // and the buffer would grow with the stream if nothing bounded it
         const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
         const std::vector<float>        one    = render(std::span<const std::uint8_t>(anchor));
         std::vector<float>              stream;
@@ -779,10 +777,9 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
     };
 
     "the counters are complete after every call, and stop() only reports them"_test = [] {
-        // GR4 runs a block's stop() on the thread that asked for the stop: requestStop() reaches
-        // SchedulerBase::stop(), which walks the graph calling changeStateTo(REQUESTED_STOP), and that invokes this
-        // block's stop() while its own worker may still be inside processBulk. So stop() may read the counters and
-        // nothing else, which means the counters have to be complete before it is called.
+        // A block's stop() runs on the thread that asked for the stop, while the block's own worker may still be
+        // inside processBulk, so stop() may read the counters and nothing else and they have to be complete before
+        // it is called.
         const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
         std::vector<float>              stream;
         appendZeros(stream, 20UZ);
@@ -842,10 +839,10 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
     };
 
     "a frame that falls between two samples"_test = [] {
-        // Without the fine step a frame is decided where the samples put it. At one sample a slot a pulse offset by
-        // tau spills |tau| of itself into the slot behind it, and that slot is the shape test's own denominator, so
-        // the ratio the nomination is made on falls to (1 - |tau|) / |tau| and a threshold of two keeps the offsets
-        // out to a quarter of a sample and no further.
+        // Without the fine step a frame is decided where the samples put it: at one sample a slot a pulse offset by
+        // tau spills |tau| of itself into the gap slot behind it, which is the shape test's own denominator, so the
+        // nomination ratio falls to (1 - |tau|) / |tau| and a threshold of two admits offsets out to a quarter of a
+        // sample and no further.
         constexpr std::array<bool, 8UZ> kPlainAdmits{false, false, true, true, true, true, true, false};
 
         const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
@@ -928,8 +925,7 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
             }
         }
 
-        // three hundred anchors end to end with one record of room a call: the sink saturates on the first frame and
-        // the buffer would grow with the stream if nothing bounded it, and the magnitudes beside it with the buffer
+        // the same saturated sink as above, where the magnitudes are held and trimmed beside the buffer
         const std::vector<float> one = render(std::span<const std::uint8_t>(anchor));
         std::vector<float>       many;
         for (std::size_t k = 0UZ; k < 300UZ; ++k) {

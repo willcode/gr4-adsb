@@ -1,8 +1,7 @@
-/* The gate for the console renderer.
+/* The test for the console renderer.
  *
- * The records here are what `ModeSDecode` produced from frames built to the standard, so a case states what the
- * pair does end to end and cannot drift from the decoder's own key spellings. What is asserted is the line, because
- * the line is this block's whole contract: the substance of the record is asserted next door.
+ * The records here are what `ModeSDecode` produced from frames built to the standard, so a case states what the pair
+ * does end to end and cannot drift from the decoder's own key spellings. What is asserted is the line.
  */
 #include <boost/ut.hpp>
 

@@ -2,15 +2,11 @@
 #
 # BasicFileSource -> Convert -> InterleavedToComplex -> PpmFramer -> ModeSDecode -> DataSetToPacket -> ZmqPacketSink
 #
-# This is adsb-rtl.yaml with the radio replaced by a file, and it is what proves the split without one: the
-# decoded frames leave this process as packets on a ZeroMQ socket and any number of readers take them.
-#
-# The rate is the capture's own 2 MS/s and the framer will not take a rate that is not an even integer multiple
-# of 1 MHz, because a half-microsecond slot has to be a whole number of samples.
+# What a user changes here: file_name, the capture to read, and the framer's sample_rate, which is the capture's
+# own and must be an even integer multiple of 1 MHz.
 #
 # The registry has InterleavedToComplex only from float32, so the int16 pairs are widened first. Convert does not
-# scale, which costs nothing here: the framer nominates on a ratio and decides bits by comparison, so a positive
-# scale factor cannot change what it reads.
+# scale, which the framer does not need: it nominates on a ratio and decides bits by comparison.
 blocks:
   - id: gr::blocks::fileio::BasicFileSource<int16>
     parameters:
@@ -38,9 +34,8 @@ blocks:
       name: to_packet
       source_label: !!str "adsb-capture"
       frequency_hz: !!float64 1090000000
-  # bind, because the producer is the stable end: the printer and the listener come and go against it.
-  # linger_ms holds the socket open briefly at teardown so the last frames of a file that has just ended
-  # are not discarded with the graph.
+  # The producer binds, being the stable end; linger_ms holds the socket open briefly at teardown so the last
+  # frames of a file that has just ended are not discarded with the graph.
   - id: gr::blocks::network::ZmqPacketSink<uint8>
     parameters:
       name: packet_sink

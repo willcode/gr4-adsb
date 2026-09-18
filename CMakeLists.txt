@@ -24,8 +24,8 @@ find_package(gnuradio4Library CONFIG REQUIRED)
 find_package(gnuradio4Blocks CONFIG REQUIRED)
 find_package(GnuRadioBlockLib CONFIG REQUIRED)
 
-# The installed gnuradio4::gnuradio-options keeps its warning flags behind $<BUILD_INTERFACE:...>, so they do not
-# reach a consuming project; this is the set the application is compiled with instead.
+# gnuradio4::gnuradio-options keeps its warning flags behind $<BUILD_INTERFACE:...>, so they do not reach a
+# consuming project; this is the set this package compiles with instead.
 add_library(gr4adsb-options INTERFACE)
 target_compile_options(
   gr4adsb-options
@@ -48,14 +48,12 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
             # GCC 16 at -O3 reports `std::vector`'s own destructor as reading an uninitialized `_M_start`, on
             # `PpmScanner::config.pulseSlots`, a member that has a default member initializer and is always
-            # constructed. GNU Radio 4 carries the same suppression in its own cmake/CompilerWarnings.cmake, for the
-            # same reason: the warning is not about code that can be written differently.
+            # constructed. GNU Radio 4 carries the same suppression in its own cmake/CompilerWarnings.cmake.
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
-# Boost.UT is what the block tests are written in. GNU Radio 4 installs none of it, so it is looked for the way the
-# SDK's own build looks for it, and -DGR_BOOST_UT_INCLUDE_DIR=<dir> names a source-built copy. Without it the tests
-# are not built and nothing else in the package changes.
+# The block tests are written in Boost.UT, which GNU Radio 4 does not install: an installed `ut` package, or
+# -DGR_BOOST_UT_INCLUDE_DIR=<dir> naming a source-built copy. Without it the tests are not built.
 if(BUILD_TESTING)
   find_package(ut CONFIG QUIET)
   set(GR4ADSB_UT_LIBRARY "")
@@ -80,15 +78,12 @@ if(BUILD_TESTING)
   endif()
 endif()
 
-# blocks/ holds the framer, the Mode S message layer and the printer, in the namespace `adsb`: GNU Radio 4 carries
-# no ADS-B family, so this package builds them itself, as one block library a graph runner loads from a plugin
-# directory. app/ holds the one-process application and the ConsoleSink it ends its chain with. Everything else in
-# either chain is the SDK's and is used as installed, and so is rungraph, which runs the graph files under graphs/.
+# blocks/ holds the framer, the Mode S message layer and the printer, in the namespace `adsb`, as one block library
+# a graph runner loads from a plugin directory. app/ holds the one-process application and the ConsoleSink it ends
+# its chain with. Everything else in either chain is the SDK's and is used as installed, rungraph among it.
 add_subdirectory(blocks)
 add_subdirectory(app)
 
-# The graph files and the two Python programs are text, and the README's commands name them by path, so an install
-# has to put them somewhere. They are data rather than programs of the build: nothing compiles them and nothing in
-# the package reads them.
+# The graph files and the two Python programs are data: nothing in the build compiles or reads them.
 install(DIRECTORY graphs/ DESTINATION "${CMAKE_INSTALL_DATADIR}/gr4-adsb/graphs")
 install(PROGRAMS tools/adsb_listen.py tools/adsb_control.py DESTINATION "${CMAKE_INSTALL_DATADIR}/gr4-adsb/tools")

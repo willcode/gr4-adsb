@@ -1,8 +1,8 @@
-/* The synthetic gate for the Mode S message decoder.
+/* The test for the Mode S message decoder.
  *
  * Every frame here is built field by field from the standard rather than copied from a capture, so a case states
- * what the standard says and not what one recording happened to contain. The parity is the framer's business and this
- * block reads the framer's verdict, so a record carries a `crc_ok` key rather than a computed parity field.
+ * what the standard says and not what one recording happened to contain. The parity is the framer's business and
+ * this block reads its verdict, so a record carries a `crc_ok` key rather than a computed parity field.
  *
  * The compact position case encodes a chosen latitude and longitude with its own implementation of RTCA
  * DO-260B A.1.7.1 and asks the block to give the position back, which pins the pairing arithmetic against the
@@ -47,7 +47,7 @@ using gr::blocks::testing::span::OutputSpan;
 
 using Record = gr::DataSet<std::uint8_t>;
 
-constexpr float kRate = 2.0e6f; ///< the rate the reference capture was taken at, so a sample index reads as a time
+constexpr float kRate = 2.0e6f; ///< so a sample index reads as a time
 
 /// @brief A long Mode S frame under construction, written by the standard's bit numbers: bit 1 is octet 0's top bit.
 struct Frame {
@@ -76,8 +76,8 @@ struct Frame {
 
 /// @brief The record the framer publishes for @p frame: the octets, and the account it gives of how they were taken.
 ///
-/// `mode_s_format` is deliberately wrong here. The decoder re-asserts it from the octets, so a case that reads
-/// the right value back has shown the block reads the frame rather than the key.
+/// `mode_s_format` is deliberately wrong here: the decoder re-asserts it from the octets, so a case that reads the
+/// right value back has shown the block reads the frame rather than the key.
 [[nodiscard]] Record recordOf(const Frame& frame, std::uint64_t sampleStart, std::optional<bool> crcOk = std::optional<bool>{true}, std::uint64_t sequence = 0ULL) {
     Record record;
     record.signal_values = frame.octets;

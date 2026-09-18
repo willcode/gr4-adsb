@@ -13,11 +13,9 @@ namespace adsb::detail {
 
 using gr::property_map;
 
-// How a record's metadata is read in this module: at the exact declared type, so that a value of the wrong type
-// reads as absent rather than as a number nobody wrote. The decoder and the printer share it because a reader
-// that disagreed with the writer about a type is the failure this module is most exposed to.
+// A record's metadata is read at the exact declared type here, so a value of the wrong type reads as absent.
 
-/// @brief Reads a key of the exact type @p T, which is how a metadata value is read where a wrong type is absent.
+/// @brief The value of @p key at the type @p T, or nothing where the key is absent or holds another type.
 template<typename T>
 [[nodiscard]] inline std::optional<T> read(const property_map& meta, std::string_view key) {
     const auto entry = meta.find(property_map::key_type(key));
