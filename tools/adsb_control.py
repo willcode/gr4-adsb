@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """adsb_control - run one of this package's graphs as a session of a GNU Radio 4 control plane.
 
-The receiving machine runs a gr4cp_server; this runs anywhere and drives it. What it does is what
-the control plane's session API is for and nothing more: it reads a graph file, posts it as a
-session, starts it, reads named blocks' settings back while the session runs, and stops and
-deletes the session on the way out.
+The receiving machine runs a gr4cp_server; this runs anywhere and drives it. It reads a graph file,
+posts it as a session, starts it, reads named blocks' settings back while the session runs, and
+stops and deletes the session on the way out.
 
     python3 tools/adsb_control.py --server http://p25.local:20081 \\
         --graph graphs/adsb-rtl.yaml --seconds 60 --show packet_sink
@@ -17,11 +16,9 @@ The requests it makes:
     GET    /sessions/{id}/blocks/{name}/settings     a block's settings and counters, by graph name
     POST   /sessions/{id}/stop, DELETE /sessions/{id}   the end of the session
 
-The server knows nothing about ADS-B. It has a graph file it does not read and a block name it is
-given; everything that makes this a receiver is in the graph file. That is also why this script
-does not print frames: they leave the receiving machine as packets on the graph's own ZeroMQ
-socket, which tools/adsb_listen.py and graphs/adsb-printer.yaml are the two readers of. The
-control plane starts and stops the receiver; it does not carry its output.
+The control plane starts and stops the receiver; it does not carry its output, so this script
+prints no frames. They leave the receiving machine as packets on the graph's own ZeroMQ socket,
+which tools/adsb_listen.py and graphs/adsb-printer.yaml are the two readers of.
 
 A block's settings stop being readable at the moment its session's graph asks to stop, which is
 before the control plane calls the session anything but running, so the last good read of each
@@ -41,7 +38,7 @@ import urllib.request
 
 
 class ServerError(Exception):
-    """A request the server refused, or did not answer, in the words it is reported by."""
+    """A request the server refused, or did not answer."""
 
 
 def parse(text):
@@ -65,7 +62,7 @@ def error_text(status, payload):
 
 
 class Server:
-    """The control plane's REST API over urllib, which is all a client of it needs."""
+    """The control plane's REST API over urllib."""
 
     def __init__(self, base):
         self.base = base.rstrip("/")

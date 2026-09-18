@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 """adsb_listen - read the decoded frames off the receiver's ZeroMQ socket and print one line each.
 
-The small reader at the other end of graphs/adsb-capture.yaml and graphs/adsb-rtl.yaml. Where
-graphs/adsb-printer.yaml is the rich view -- a whole GNU Radio 4 graph that renders the same lines the
-one-machine application prints -- this is the proof that the packets are readable by a program that is
-not GNU Radio 4 at all: sixty lines of struct.unpack against the published header table.
+The reader at the other end of graphs/adsb-capture.yaml, graphs/adsb-hackrf.yaml and graphs/adsb-rtl.yaml,
+for a program that is not GNU Radio 4. graphs/adsb-printer.yaml renders the same packets as a graph.
 
     python3 tools/adsb_listen.py --endpoint tcp://127.0.0.1:5560 --seconds 30
 
 One line per frame: the time the frame sits at in the receiver's stream, the frame's octets in hex, and
-every metadata key the decoder wrote, which is where the ICAO address, the downlink format, the message
-type and whatever that type carried arrive.
+every metadata key the decoder wrote, the ICAO address, the downlink format and the message type among
+them.
 
 The wire is gr::network::PacketEnvelope, which GNU Radio 4's own PacketEnvelope.hpp states field by
 field: four ZeroMQ frames -- the subscription topic, a 32-byte little-endian header, a YAML metadata
 document, and the payload. Nothing below imports a GNU Radio module; the header is a fixed table of
-fixed-width little-endian fields and is readable from that table alone, which is the point of it.
+fixed-width little-endian fields and is read from that table alone.
 
-pyzmq is the one requirement and there is no way around it: ZeroMQ is a wire protocol (ZMTP) over the
-socket, not a datagram format, so a raw socket would have to implement the handshake and the framing.
-Install it with `pip install pyzmq`, or on Fedora `sudo dnf install python3-zmq`, on Debian and Ubuntu
+pyzmq is the one requirement: ZeroMQ is a wire protocol (ZMTP) over the socket, not a datagram format,
+so a raw socket would have to implement the handshake and the framing. Install it with
+`pip install pyzmq`, or on Fedora `sudo dnf install python3-zmq`, on Debian and Ubuntu
 `sudo apt install python3-zmq`.
 """
 
@@ -55,7 +53,7 @@ HIDDEN_KEYS = ("signal_name", "signal_quantity", "signal_unit", "signal_min", "s
 
 
 class Refused(Exception):
-    """A message that is not an envelope this reader implements, in the words the refusal is named by."""
+    """A message that is not an envelope this reader implements, named by the rule it broke."""
 
 
 def parse_header(frame):
