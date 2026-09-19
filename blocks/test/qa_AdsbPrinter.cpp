@@ -1,7 +1,7 @@
 /* The test for the console renderer.
  *
- * The records here are what `ModeSDecode` produced from frames built to the standard, so a case states what the pair
- * does end to end and cannot drift from the decoder's own key spellings. What is asserted is the line.
+ * `ModeSDecode` produces the records here from frames built to the standard, so a case states what the pair does
+ * end to end and cannot drift from the decoder's own key spellings. Each case asserts the line.
  */
 #include <boost/ut.hpp>
 

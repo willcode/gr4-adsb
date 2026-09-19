@@ -78,7 +78,7 @@ constexpr std::array<int, 16> kPreamble{1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0
 void append(std::vector<float>& into, std::span<const float> more) { into.insert(into.end(), more.begin(), more.end()); }
 void appendZeros(std::vector<float>& into, std::size_t count) { into.insert(into.end(), count, 0.F); }
 
-/// @brief One frame followed by a long frame's worth of silence, which is what a position needs before it is decided.
+/// @brief One frame followed by a long frame's worth of silence, the span a position needs before it is decided.
 [[nodiscard]] std::vector<float> padded(std::span<const std::uint8_t> frame, std::size_t slot = 1UZ) {
     std::vector<float> wave = render(frame, slot);
     appendZeros(wave, (16UZ + 224UZ) * slot);
@@ -109,7 +109,7 @@ struct Seen {
     PpmOutcome                outcome   = PpmOutcome::Admitted;
 };
 
-/// What one kernel run reported and counted.
+/// The frames one kernel run reported, and the counters it left.
 struct Scanned {
     std::vector<Seen> frames{};
     PpmCounters       counters{};
@@ -118,7 +118,7 @@ struct Scanned {
 /**
  * @brief Drives the kernel over @p data presenting @p chunk fresh samples at a time.
  *
- * The undecided tail is presented again with whatever arrives next, which is the contract `consume()` states.
+ * The undecided tail is presented again with whatever arrives next, as `consume()`'s contract states.
  */
 [[nodiscard]] Scanned scan(std::span<const float> data, std::size_t chunk = 0UZ, std::size_t slot = 1UZ, float threshold = 2.F) {
     PpmScanner scanner;
@@ -157,7 +157,7 @@ template<typename TBlock>
 /// The settings every block case shares, at 2 MS/s.
 [[nodiscard]] gr::property_map modeSSettings(float rate = 2.0e6F) { return {{"profile", std::string("mode_s")}, {"sample_rate", rate}}; }
 
-/// What one drive of the block produced, with the counters it reported.
+/// The records one drive of the block produced, and the counters it reported.
 struct Framed {
     std::vector<Record> records{};
     std::uint64_t       samples = 0ULL, candidates = 0ULL, nominations = 0ULL, admitted = 0ULL, crcFailed = 0ULL, shortFormat = 0ULL, published = 0ULL, tagsDropped = 0ULL, rateRefused = 0ULL, tailDropped = 0ULL, overrunDropped = 0ULL;
@@ -166,8 +166,8 @@ struct Framed {
 
 /// @brief Drives the block over @p input in windows of @p chunk samples, with @p tags planted at absolute offsets.
 ///
-/// @p room is the records the sink offers per call, and @p connected drives the block with its output port left
-/// unconnected, which is what a graph does when nothing is wired to `out`.
+/// @p room is the records the sink offers per call. A false @p connected drives the block with its output port
+/// left unconnected, as a graph does when nothing is wired to `out`.
 template<typename T>
 [[nodiscard]] Framed feed(PpmFramer<T>& block, std::span<const T> input, std::size_t chunk = 0UZ, std::span<const gr::Tag> tags = {}, std::size_t room = 64UZ, bool connected = true) {
     Framed              result;
@@ -324,7 +324,7 @@ struct Rng {
     [[nodiscard]] double uniform() noexcept { return static_cast<double>((next() >> 11U) + 1ULL) * 0x1p-53; }
 };
 
-/// @brief Rayleigh magnitudes of unit mean power, which is what a complex Gaussian channel presents to the framer.
+/// @brief Rayleigh magnitudes of unit mean power, the envelope a complex Gaussian channel presents to the framer.
 [[nodiscard]] std::vector<float> rayleigh(std::size_t count, std::uint64_t seed) {
     Rng                rng{seed};
     std::vector<float> noise(count);
@@ -334,13 +334,13 @@ struct Rng {
     return noise;
 }
 
-/// @brief Fine samples a slot in the rendered waveform, so an offset of an eighth of a sample is an exact grid step.
+/// @brief Fine samples a slot in the rendered waveform; an offset of an eighth of a sample is an exact grid step.
 constexpr std::size_t kGrid = 32UZ;
 
-/// @brief Slots of silence the renderer puts before the burst, so the scan has positions on either side of it.
+/// @brief Slots of silence the renderer puts before the burst; the scan then has positions on either side of it.
 constexpr std::size_t kLead = 8UZ;
 
-/// @brief The carrier every rendered sample sits on, so nothing downstream can pass by reading a real part.
+/// @brief The carrier every rendered sample sits on; nothing downstream can pass by reading a real part.
 constexpr float kCarrier = 0.7F;
 
 /// @brief One magnitude stream as the samples it could have been read from, unchanged in magnitude.
@@ -357,9 +357,9 @@ constexpr float kCarrier = 0.7F;
 /**
  * @brief One frame as complex baseband, one sample a slot, sitting @p tau samples away from the sample it is nearest.
  *
- * Rectangular pulses are laid on a grid of `kGrid` samples a slot and averaged over one slot, which is the front end
- * this framer is written for: each sample is half a microsecond of signal integrated. Sampling that grid at one
- * sample a slot delays the burst by @p tau, leaving the frame's first slot at index `lead + tau`.
+ * Rectangular pulses are laid on a grid of `kGrid` samples a slot and averaged over one slot, the front end this
+ * framer is written for: each sample is half a microsecond of signal integrated. Sampling that grid at one sample
+ * a slot delays the burst by @p tau, leaving the frame's first slot at index `lead + tau`.
  *
  * @p tau in [-0.5, 0.5), a multiple of `1 / kGrid`, so the grid is sampled and never resampled.
  */
@@ -378,8 +378,8 @@ constexpr float kCarrier = 0.7F;
     }
     slots.insert(slots.end(), trail, 0.F);
 
-    // the running mean over one slot of the grid; the divisor is a power of two, so every rendered value is an exact
-    // multiple of 1 / kGrid and two equal offsets render bit for bit alike
+    // the running mean over one slot of the grid. The divisor is a power of two, so every rendered value is an
+    // exact multiple of 1 / kGrid and two equal offsets render bit for bit alike
     std::vector<float> mean(slots.size() * kGrid, 0.F);
     float              running = 0.F;
     for (std::size_t m = 0UZ; m < mean.size(); ++m) {
@@ -404,7 +404,7 @@ constexpr float kCarrier = 0.7F;
     return wave;
 }
 
-/// @brief The eight sub-sample offsets a `phase_steps` of eight searches, which is the grid the renderer is swept on.
+/// @brief The eight sub-sample offsets a `phase_steps` of eight searches, the grid the renderer is swept on.
 [[nodiscard]] constexpr float offsetOf(std::size_t step) noexcept { return -0.5F + static_cast<float>(step) / 8.F; }
 
 } // namespace qa_ppm_framer
@@ -778,8 +778,8 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
 
     "the counters are complete after every call, and stop() only reports them"_test = [] {
         // A block's stop() runs on the thread that asked for the stop, while the block's own worker may still be
-        // inside processBulk, so stop() may read the counters and nothing else and they have to be complete before
-        // it is called.
+        // inside processBulk. stop() may therefore read the counters and nothing else, and the counters have to be
+        // complete before it is called.
         const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
         std::vector<float>              stream;
         appendZeros(stream, 20UZ);
@@ -839,10 +839,10 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
     };
 
     "a frame that falls between two samples"_test = [] {
-        // Without the fine step a frame is decided where the samples put it: at one sample a slot a pulse offset by
-        // tau spills |tau| of itself into the gap slot behind it, which is the shape test's own denominator, so the
-        // nomination ratio falls to (1 - |tau|) / |tau| and a threshold of two admits offsets out to a quarter of a
-        // sample and no further.
+        // Without the fine step a frame is decided where the samples put it: at one sample a slot a pulse offset
+        // by tau spills |tau| of itself into the gap slot behind it, the shape test's own denominator. The
+        // nomination ratio falls to (1 - |tau|) / |tau|, and a threshold of two admits offsets out to a quarter of
+        // a sample and no further.
         constexpr std::array<bool, 8UZ> kPlainAdmits{false, false, true, true, true, true, true, false};
 
         const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);

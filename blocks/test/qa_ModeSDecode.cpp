@@ -1,11 +1,11 @@
 /* The test for the Mode S message decoder.
  *
- * Every frame here is built field by field from the standard rather than copied from a capture, so a case states
- * what the standard says and not what one recording happened to contain. The parity is the framer's business and
- * this block reads its verdict, so a record carries a `crc_ok` key rather than a computed parity field.
+ * Every frame here is built field by field from the standard rather than copied from a capture. A case therefore
+ * states what the standard says, not what one recording happened to contain. The parity is the framer's business
+ * and this block reads its verdict, so a record carries a `crc_ok` key rather than a computed parity field.
  *
  * The compact position case encodes a chosen latitude and longitude with its own implementation of RTCA
- * DO-260B A.1.7.1 and asks the block to give the position back, which pins the pairing arithmetic against the
+ * DO-260B A.1.7.1 and asks the block to give the position back. That pins the pairing arithmetic against the
  * standard's equations rather than against itself.
  */
 #include <boost/ut.hpp>
@@ -141,7 +141,7 @@ struct Decoded {
     return index < decoded.records.size() && !decoded.records[index].meta_information.empty() ? decoded.records[index].meta_information[0UZ] : empty;
 }
 
-/// @brief The value of @p key read at the exact type @p T, which is how a wrong type reads as absent.
+/// @brief The value of @p key read at the exact type @p T; a value of another type reads as absent.
 template<typename T>
 [[nodiscard]] std::optional<T> read(const gr::property_map& meta, std::string_view key) {
     const auto entry = meta.find(gr::property_map::key_type(key));
@@ -555,7 +555,7 @@ const boost::ut::suite<"adsb"> modeSTests = [] {
         expect(eq(decoded.positions, 1ULL));
         expect(eq(textOf(metaOf(decoded, 0UZ), "adsb_callsign"), std::string("QAN")));
 
-        // the same records through the stock record-to-packet pair, which is the road out of a process
+        // the same records through the stock record-to-packet pair, the path a record takes out of a process
         gr::Graph flow;
         auto&     source = flow.emplaceBlock<RecordSource>();
         source._records  = decoded.records;
