@@ -25,6 +25,10 @@ code { background: var(--panel); padding: 0.1em 0.35em; border-radius: 3px; }
 pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 5px; padding: 0.9rem 1rem; overflow-x: auto; }
 pre code { background: none; padding: 0; }
 div.table { overflow-x: auto; }
+div.table.bounded { max-height: 60vh; overflow: auto; margin: 0.8rem 0; }
+div.table.bounded table { margin: 0; }
+/* a collapsed border does not travel with a sticky cell, so the header keeps its rule as a shadow */
+div.table.bounded thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px var(--rule); }
 table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; }
 th, td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; text-align: left; vertical-align: top; }
 th { background: var(--panel); font-weight: 600; }
@@ -51,33 +55,32 @@ svg.flowgraph .arrow { fill: var(--accent); }
 </ul>
 <h2>Diagram</h2>
 <div class="diagram">
-<svg class="flowgraph" viewBox="0 0 807.8 66.0" width="807.8" height="66.0" style="max-width:100%;height:auto">
+<svg class="flowgraph" viewBox="0 0 616.8 66.0" width="616.8" height="66.0" style="max-width:100%;height:auto">
 <defs><marker id="g-arrow" viewBox="0 0 8 6" refX="8" refY="3" markerWidth="8" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M 0 0 L 8 3 L 0 6 z"/></marker></defs>
-<path class="edge" marker-end="url(#g-arrow)" d="M 177.2 33.0 C 214.2 33.0, 214.2 33.0, 251.2 33.0"/>
-<text class="port" x="182.2" y="28.0">out</text>
-<text class="port" x="246.2" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 416.4 33.0 C 453.4 33.0, 453.4 33.0, 490.4 33.0"/>
-<text class="port" x="421.4" y="28.0">out</text>
-<text class="port" x="485.4" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 583.0 33.0 C 620.0 33.0, 620.0 33.0, 657.0 33.0"/>
-<text class="port" x="588.0" y="28.0">out</text>
-<text class="port" x="652.0" y="28.0" text-anchor="end">in</text>
-<rect class="node" x="12.0" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
-<text class="name" x="94.6" y="29.0" text-anchor="middle">packet_source</text>
-<text class="type" x="94.6" y="43.0" text-anchor="middle">ZmqPacketSource&lt;uint8&gt;</text>
-<rect class="node" x="251.2" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
-<text class="name" x="333.8" y="29.0" text-anchor="middle">to_record</text>
-<text class="type" x="333.8" y="43.0" text-anchor="middle">PacketToDataSet&lt;uint8&gt;</text>
-<rect class="node" x="490.4" y="12.0" width="92.6" height="42.0" rx="7" ry="7"/>
-<text class="name" x="536.7" y="29.0" text-anchor="middle">printer</text>
-<text class="type" x="536.7" y="43.0" text-anchor="middle">AdsbPrinter</text>
-<rect class="node" x="657.0" y="12.0" width="138.8" height="42.0" rx="7" ry="7"/>
-<text class="name" x="726.4" y="29.0" text-anchor="middle">console</text>
-<text class="type" x="726.4" y="43.0" text-anchor="middle">DataSetSink&lt;uint8&gt;</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 128.2 33.0 C 165.2 33.0, 165.2 33.0, 202.2 33.0"/>
+<text class="port" x="133.2" y="28.0">out</text>
+<text class="port" x="197.2" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 288.8 33.0 C 325.8 33.0, 325.8 33.0, 362.8 33.0"/>
+<text class="port" x="293.8" y="28.0">out</text>
+<text class="port" x="357.8" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 446.8 33.0 C 483.8 33.0, 483.8 33.0, 520.8 33.0"/>
+<text class="port" x="451.8" y="28.0">out</text>
+<text class="port" x="515.8" y="28.0" text-anchor="end">in</text>
+<rect class="node" x="12.0" y="12.0" width="116.2" height="42.0" rx="7" ry="7"/>
+<text class="name" x="70.1" y="29.0" text-anchor="middle">packet_source</text>
+<text class="type" x="70.1" y="43.0" text-anchor="middle">uint8</text>
+<rect class="node" x="202.2" y="12.0" width="86.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="245.5" y="29.0" text-anchor="middle">to_record</text>
+<text class="type" x="245.5" y="43.0" text-anchor="middle">uint8</text>
+<rect class="node" x="362.8" y="12.0" width="84.0" height="42.0" rx="7" ry="7"/>
+<text class="name" x="404.8" y="38.0" text-anchor="middle">printer</text>
+<rect class="node" x="520.8" y="12.0" width="84.0" height="42.0" rx="7" ry="7"/>
+<text class="name" x="562.8" y="29.0" text-anchor="middle">console</text>
+<text class="type" x="562.8" y="43.0" text-anchor="middle">uint8</text>
 </svg>
 </div>
 <h2>Blocks</h2>
-<div class="table">
+<div class="table bounded">
 <table>
 <thead>
 <tr><th>Name</th><th>Type</th><th>Parameters</th><th>Meta information</th></tr>

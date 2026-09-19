@@ -25,6 +25,10 @@ code { background: var(--panel); padding: 0.1em 0.35em; border-radius: 3px; }
 pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 5px; padding: 0.9rem 1rem; overflow-x: auto; }
 pre code { background: none; padding: 0; }
 div.table { overflow-x: auto; }
+div.table.bounded { max-height: 60vh; overflow: auto; margin: 0.8rem 0; }
+div.table.bounded table { margin: 0; }
+/* a collapsed border does not travel with a sticky cell, so the header keeps its rule as a shadow */
+div.table.bounded thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px var(--rule); }
 table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; }
 th, td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; text-align: left; vertical-align: top; }
 th { background: var(--panel); font-weight: 600; }
@@ -51,39 +55,38 @@ svg.flowgraph .arrow { fill: var(--accent); }
 </ul>
 <h2>Diagram</h2>
 <div class="diagram">
-<svg class="flowgraph" viewBox="0 0 1132.8 66.0" width="1132.8" height="66.0" style="max-width:100%;height:auto;min-width:1132.8px">
+<svg class="flowgraph" viewBox="0 0 843.2 66.0" width="843.2" height="66.0" style="max-width:100%;height:auto">
 <defs><marker id="g-arrow" viewBox="0 0 8 6" refX="8" refY="3" markerWidth="8" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M 0 0 L 8 3 L 0 6 z"/></marker></defs>
-<path class="edge" marker-end="url(#g-arrow)" d="M 216.8 33.0 C 253.8 33.0, 253.8 33.0, 290.8 33.0"/>
-<text class="port" x="221.8" y="28.0">out</text>
-<text class="port" x="285.8" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 489.0 33.0 C 526.0 33.0, 526.0 33.0, 563.0 33.0"/>
-<text class="port" x="494.0" y="28.0">out</text>
-<text class="port" x="558.0" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 655.6 33.0 C 692.6 33.0, 692.6 33.0, 729.6 33.0"/>
-<text class="port" x="660.6" y="28.0">out</text>
-<text class="port" x="724.6" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 894.8 33.0 C 931.8 33.0, 931.8 33.0, 968.8 33.0"/>
-<text class="port" x="899.8" y="28.0">out</text>
-<text class="port" x="963.8" y="28.0" text-anchor="end">in</text>
-<rect class="node" x="12.0" y="12.0" width="204.8" height="42.0" rx="7" ry="7"/>
-<text class="name" x="114.4" y="29.0" text-anchor="middle">radio</text>
-<text class="type" x="114.4" y="43.0" text-anchor="middle">SoapySource&lt;complex&lt;float...</text>
-<rect class="node" x="290.8" y="12.0" width="198.2" height="42.0" rx="7" ry="7"/>
-<text class="name" x="389.9" y="29.0" text-anchor="middle">framer</text>
-<text class="type" x="389.9" y="43.0" text-anchor="middle">PpmFramer&lt;complex&lt;float32&gt;&gt;</text>
-<rect class="node" x="563.0" y="12.0" width="92.6" height="42.0" rx="7" ry="7"/>
-<text class="name" x="609.3" y="29.0" text-anchor="middle">decoder</text>
-<text class="type" x="609.3" y="43.0" text-anchor="middle">ModeSDecode</text>
-<rect class="node" x="729.6" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
-<text class="name" x="812.2" y="29.0" text-anchor="middle">to_packet</text>
-<text class="type" x="812.2" y="43.0" text-anchor="middle">DataSetToPacket&lt;uint8&gt;</text>
-<rect class="node" x="968.8" y="12.0" width="152.0" height="42.0" rx="7" ry="7"/>
-<text class="name" x="1044.8" y="29.0" text-anchor="middle">packet_sink</text>
-<text class="type" x="1044.8" y="43.0" text-anchor="middle">ZmqPacketSink&lt;uint8&gt;</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 137.6 33.0 C 174.6 33.0, 174.6 33.0, 211.6 33.0"/>
+<text class="port" x="142.6" y="28.0">out</text>
+<text class="port" x="206.6" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 337.2 33.0 C 374.2 33.0, 374.2 33.0, 411.2 33.0"/>
+<text class="port" x="342.2" y="28.0">out</text>
+<text class="port" x="406.2" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 495.2 33.0 C 532.2 33.0, 532.2 33.0, 569.2 33.0"/>
+<text class="port" x="500.2" y="28.0">out</text>
+<text class="port" x="564.2" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 655.8 33.0 C 692.8 33.0, 692.8 33.0, 729.8 33.0"/>
+<text class="port" x="660.8" y="28.0">out</text>
+<text class="port" x="724.8" y="28.0" text-anchor="end">in</text>
+<rect class="node" x="12.0" y="12.0" width="125.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="74.8" y="29.0" text-anchor="middle">radio</text>
+<text class="type" x="74.8" y="43.0" text-anchor="middle">complex&lt;float32&gt;</text>
+<rect class="node" x="211.6" y="12.0" width="125.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="274.4" y="29.0" text-anchor="middle">framer</text>
+<text class="type" x="274.4" y="43.0" text-anchor="middle">complex&lt;float32&gt;</text>
+<rect class="node" x="411.2" y="12.0" width="84.0" height="42.0" rx="7" ry="7"/>
+<text class="name" x="453.2" y="38.0" text-anchor="middle">decoder</text>
+<rect class="node" x="569.2" y="12.0" width="86.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="612.5" y="29.0" text-anchor="middle">to_packet</text>
+<text class="type" x="612.5" y="43.0" text-anchor="middle">uint8</text>
+<rect class="node" x="729.8" y="12.0" width="101.4" height="42.0" rx="7" ry="7"/>
+<text class="name" x="780.5" y="29.0" text-anchor="middle">packet_sink</text>
+<text class="type" x="780.5" y="43.0" text-anchor="middle">uint8</text>
 </svg>
 </div>
 <h2>Blocks</h2>
-<div class="table">
+<div class="table bounded">
 <table>
 <thead>
 <tr><th>Name</th><th>Type</th><th>Parameters</th><th>Meta information</th></tr>

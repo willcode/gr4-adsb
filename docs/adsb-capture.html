@@ -25,6 +25,10 @@ code { background: var(--panel); padding: 0.1em 0.35em; border-radius: 3px; }
 pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 5px; padding: 0.9rem 1rem; overflow-x: auto; }
 pre code { background: none; padding: 0; }
 div.table { overflow-x: auto; }
+div.table.bounded { max-height: 60vh; overflow: auto; margin: 0.8rem 0; }
+div.table.bounded table { margin: 0; }
+/* a collapsed border does not travel with a sticky cell, so the header keeps its rule as a shadow */
+div.table.bounded thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px var(--rule); }
 table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; }
 th, td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; text-align: left; vertical-align: top; }
 th { background: var(--panel); font-weight: 600; }
@@ -51,51 +55,48 @@ svg.flowgraph .arrow { fill: var(--accent); }
 </ul>
 <h2>Diagram</h2>
 <div class="diagram">
-<svg class="flowgraph" viewBox="0 0 1617.8 66.0" width="1617.8" height="66.0" style="max-width:100%;height:auto;min-width:1617.8px">
+<svg class="flowgraph" viewBox="0 0 1152.4 66.0" width="1152.4" height="66.0" style="max-width:100%;height:auto;min-width:1152.4px">
 <defs><marker id="g-arrow" viewBox="0 0 8 6" refX="8" refY="3" markerWidth="8" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M 0 0 L 8 3 L 0 6 z"/></marker></defs>
-<path class="edge" marker-end="url(#g-arrow)" d="M 177.2 33.0 C 214.2 33.0, 214.2 33.0, 251.2 33.0"/>
-<text class="port" x="182.2" y="28.0">out</text>
-<text class="port" x="246.2" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 423.0 33.0 C 460.0 33.0, 460.0 33.0, 497.0 33.0"/>
-<text class="port" x="428.0" y="28.0">out</text>
-<text class="port" x="492.0" y="28.0" text-anchor="end">interleaved</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 701.8 33.0 C 738.8 33.0, 738.8 33.0, 775.8 33.0"/>
-<text class="port" x="706.8" y="28.0">out</text>
-<text class="port" x="770.8" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 974.0 33.0 C 1011.0 33.0, 1011.0 33.0, 1048.0 33.0"/>
-<text class="port" x="979.0" y="28.0">out</text>
-<text class="port" x="1043.0" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 1140.6 33.0 C 1177.6 33.0, 1177.6 33.0, 1214.6 33.0"/>
-<text class="port" x="1145.6" y="28.0">out</text>
-<text class="port" x="1209.6" y="28.0" text-anchor="end">in</text>
-<path class="edge" marker-end="url(#g-arrow)" d="M 1379.8 33.0 C 1416.8 33.0, 1416.8 33.0, 1453.8 33.0"/>
-<text class="port" x="1384.8" y="28.0">out</text>
-<text class="port" x="1448.8" y="28.0" text-anchor="end">in</text>
-<rect class="node" x="12.0" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
-<text class="name" x="94.6" y="29.0" text-anchor="middle">capture_file</text>
-<text class="type" x="94.6" y="43.0" text-anchor="middle">BasicFileSource&lt;int16&gt;</text>
-<rect class="node" x="251.2" y="12.0" width="171.8" height="42.0" rx="7" ry="7"/>
-<text class="name" x="337.1" y="29.0" text-anchor="middle">widen</text>
-<text class="type" x="337.1" y="43.0" text-anchor="middle">Convert&lt;int16, float32&gt;</text>
-<rect class="node" x="497.0" y="12.0" width="204.8" height="42.0" rx="7" ry="7"/>
-<text class="name" x="599.4" y="29.0" text-anchor="middle">to_complex</text>
-<text class="type" x="599.4" y="43.0" text-anchor="middle">InterleavedToComplex&lt;floa...</text>
-<rect class="node" x="775.8" y="12.0" width="198.2" height="42.0" rx="7" ry="7"/>
-<text class="name" x="874.9" y="29.0" text-anchor="middle">framer</text>
-<text class="type" x="874.9" y="43.0" text-anchor="middle">PpmFramer&lt;complex&lt;float32&gt;&gt;</text>
-<rect class="node" x="1048.0" y="12.0" width="92.6" height="42.0" rx="7" ry="7"/>
-<text class="name" x="1094.3" y="29.0" text-anchor="middle">decoder</text>
-<text class="type" x="1094.3" y="43.0" text-anchor="middle">ModeSDecode</text>
-<rect class="node" x="1214.6" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
-<text class="name" x="1297.2" y="29.0" text-anchor="middle">to_packet</text>
-<text class="type" x="1297.2" y="43.0" text-anchor="middle">DataSetToPacket&lt;uint8&gt;</text>
-<rect class="node" x="1453.8" y="12.0" width="152.0" height="42.0" rx="7" ry="7"/>
-<text class="name" x="1529.8" y="29.0" text-anchor="middle">packet_sink</text>
-<text class="type" x="1529.8" y="43.0" text-anchor="middle">ZmqPacketSink&lt;uint8&gt;</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 120.8 33.0 C 157.8 33.0, 157.8 33.0, 194.8 33.0"/>
+<text class="port" x="125.8" y="28.0">out</text>
+<text class="port" x="189.8" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 278.8 33.0 C 315.8 33.0, 315.8 33.0, 352.8 33.0"/>
+<text class="port" x="283.8" y="28.0">out</text>
+<text class="port" x="347.8" y="28.0" text-anchor="end">interleaved</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 446.8 33.0 C 483.8 33.0, 483.8 33.0, 520.8 33.0"/>
+<text class="port" x="451.8" y="28.0">out</text>
+<text class="port" x="515.8" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 646.4 33.0 C 683.4 33.0, 683.4 33.0, 720.4 33.0"/>
+<text class="port" x="651.4" y="28.0">out</text>
+<text class="port" x="715.4" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 804.4 33.0 C 841.4 33.0, 841.4 33.0, 878.4 33.0"/>
+<text class="port" x="809.4" y="28.0">out</text>
+<text class="port" x="873.4" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 965.0 33.0 C 1002.0 33.0, 1002.0 33.0, 1039.0 33.0"/>
+<text class="port" x="970.0" y="28.0">out</text>
+<text class="port" x="1034.0" y="28.0" text-anchor="end">in</text>
+<rect class="node" x="12.0" y="12.0" width="108.8" height="42.0" rx="7" ry="7"/>
+<text class="name" x="66.4" y="29.0" text-anchor="middle">capture_file</text>
+<text class="type" x="66.4" y="43.0" text-anchor="middle">int16</text>
+<rect class="node" x="194.8" y="12.0" width="84.0" height="42.0" rx="7" ry="7"/>
+<text class="name" x="236.8" y="38.0" text-anchor="middle">widen</text>
+<rect class="node" x="352.8" y="12.0" width="94.0" height="42.0" rx="7" ry="7"/>
+<text class="name" x="399.8" y="38.0" text-anchor="middle">to_complex</text>
+<rect class="node" x="520.8" y="12.0" width="125.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="583.6" y="29.0" text-anchor="middle">framer</text>
+<text class="type" x="583.6" y="43.0" text-anchor="middle">complex&lt;float32&gt;</text>
+<rect class="node" x="720.4" y="12.0" width="84.0" height="42.0" rx="7" ry="7"/>
+<text class="name" x="762.4" y="38.0" text-anchor="middle">decoder</text>
+<rect class="node" x="878.4" y="12.0" width="86.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="921.7" y="29.0" text-anchor="middle">to_packet</text>
+<text class="type" x="921.7" y="43.0" text-anchor="middle">uint8</text>
+<rect class="node" x="1039.0" y="12.0" width="101.4" height="42.0" rx="7" ry="7"/>
+<text class="name" x="1089.7" y="29.0" text-anchor="middle">packet_sink</text>
+<text class="type" x="1089.7" y="43.0" text-anchor="middle">uint8</text>
 </svg>
 </div>
 <h2>Blocks</h2>
-<div class="table">
+<div class="table bounded">
 <table>
 <thead>
 <tr><th>Name</th><th>Type</th><th>Parameters</th><th>Meta information</th></tr>
