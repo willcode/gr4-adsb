@@ -1,4 +1,4 @@
-// adsb — the demo application: build the 1090 MHz receive chain, run it, print one line per decoded frame.
+// adsb: builds the 1090 MHz receive chain, runs it, and prints one line per decoded frame.
 //
 // Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
 // File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
@@ -51,7 +51,7 @@ std::atomic<bool> gStop{false};
 
 extern "C" void onSignal(int) { gStop.store(true, std::memory_order_relaxed); }
 
-/// @brief One text record in, one line on stdout. The record arrives already rendered.
+/// @brief Writes one line on stdout per text record. The record arrives already rendered.
 struct ConsoleSink : gr::Block<ConsoleSink> {
     gr::PortIn<gr::DataSet<std::uint8_t>, gr::Async> in;
 
@@ -87,10 +87,10 @@ struct Options {
     std::uint32_t phaseSteps  = 8U;   ///< sub-sample offsets a candidate is re-tested at; 1 turns the fine step off
     float         coarseRatio = 0.5F; ///< the share of `threshold` the integer-position test admits a candidate at
 
-    // Unset means the device is not asked for this setting: SoapySource applies every setting it holds when it opens
-    // the device, its own defaults being 10 dB of gain and 500 kHz of bandwidth, so an option left off the command
-    // line must reach the block as an empty vector rather than as an absent key. A device can refuse the whole
-    // activation over a combination it cannot serve; an SDRplay does, with `Init() failed: sdrplay_api_Fail`.
+    // Unset means the device is not asked for this setting. SoapySource applies every setting it holds when it
+    // opens the device, its own defaults being 10 dB of gain and 500 kHz of bandwidth, so an option left off the
+    // command line must reach the block as an empty vector rather than as an absent key. A device can refuse the
+    // whole activation over a combination it cannot serve; an SDRplay does, with `Init() failed: sdrplay_api_Fail`.
     std::optional<double> gain{};      ///< dB of receive gain
     std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
     bool                  agc = false; ///< ask for the device's own automatic gain control
@@ -129,7 +129,7 @@ void usage() {
 
 // Guarded with its one caller: unused, it would be an error under this package's -Werror.
 #ifdef GR4ADSB_HAVE_SOAPY
-/// @brief The SoapySDR device string @p spec split the way `SoapySource` wants it: the driver name, then the rest.
+/// @brief The SoapySDR device string @p spec split as `SoapySource` takes it: the driver name, then the rest.
 ///
 /// The block takes the driver under `device` and merges the remaining comma-separated `key=value` pairs from
 /// `device_parameter`, so "driver=uhd,type=b200" becomes ("uhd", "type=b200"). A string that names no driver key is
@@ -249,9 +249,9 @@ void usage() {
         return std::nullopt;
     }
     if (options.pluginDirs.empty()) {
-        // This package's own plugin directory, which holds the ADS-B block library, and the SDK's, which holds every
-        // other family; both from the install this build was configured for, so an installed program needs no
-        // --plugin-dir.
+        // This package's own plugin directory, which holds the ADS-B block library, and the SDK's, which holds
+        // every other family. Both come from the install this build was configured for, so an installed program
+        // needs no --plugin-dir.
         options.pluginDirs.assign({std::string(GR4ADSB_PLUGIN_DIR), std::string(GR4ADSB_SDK_PLUGIN_DIR)});
     }
     return options;
@@ -330,16 +330,16 @@ int main(int argc, char** argv) {
 
     bool wired = true;
     if (!options.file.empty()) {
-        // A capture is interleaved int16, so pairing the samples into complex is the only conversion needed: the
-        // framer nominates on a ratio and decides bits by comparison, so converter counts serve as well as
-        // normalized floats. Nothing paces the run; it goes as fast as the file reads.
+        // A capture is interleaved int16, so pairing the samples into complex is the only conversion needed. The
+        // framer nominates on a ratio and decides bits by comparison, and converter counts therefore serve as well
+        // as normalized floats. Nothing paces the run; it goes as fast as the file reads.
         auto& source = flow.emplaceBlock<gr::blocks::fileio::BasicFileSource<std::int16_t>>({{"file_name", options.file}});
 
-        // The file source takes the size of each read from the bound on its output port, and an unbounded port
-        // reports SIZE_MAX samples, which is not a size any read can publish, so the bound is required. It is half
-        // the edge rather than the whole of it: a read as large as the edge could only ever be published into a ring
-        // the graph had emptied first. 64 ki int16 is the edge, 33 ms of a 2 MS/s stream at two int16 a sample, and
-        // a read is half of it, so one read can be consumed while the next arrives.
+        // The file source takes the size of each read from the bound on its output port. An unbounded port reports
+        // SIZE_MAX samples, which no read can publish, so the bound is required. It is half the edge rather than
+        // the whole of it: a read as large as the edge could only ever be published into a ring the graph had
+        // emptied first. 64 ki int16 is the edge, 33 ms of a 2 MS/s stream at two int16 a sample; a read is half of
+        // that, so one read can be consumed while the next arrives.
         constexpr std::size_t kReaderRing = 1UZ << 16U;
         source.out.max_samples            = kReaderRing / 2UZ;
 

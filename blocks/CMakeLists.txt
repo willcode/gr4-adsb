@@ -3,8 +3,9 @@
 # in the namespace `adsb`, and the registry keys follow from it: adsb::PpmFramer<complex<float32>>,
 # adsb::PpmFramer<float32>, adsb::ModeSDecode and adsb::AdsbPrinter.
 #
-# PpmFramer runs on gr::digital::PpmScanner, the pulse-position kernel of the framework's algorithm layer, which is
-# what gnuradio-algorithm is for here. RecordFields.hpp registers nothing and is read by the two message blocks.
+# PpmFramer runs on gr::digital::PpmScanner, the pulse-position kernel of the framework's algorithm layer, and
+# gnuradio-algorithm is on the link line for it. RecordFields.hpp registers nothing and is read by the two message
+# blocks.
 
 gr_add_block_library(
   AdsbDemoBlocks
@@ -22,10 +23,10 @@ add_library(gr4adsb-blocks INTERFACE)
 target_include_directories(gr4adsb-blocks INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(gr4adsb-blocks INTERFACE gnuradio4::gnuradio-core gnuradio4::gnuradio-algorithm)
 
-# The warning set goes on the object library alone, where it applies to the generated translation units that compile
-# the headers and stays out of anything the shared library exports. The include directory goes with it: the
-# generated units reach a registering header by its absolute path, so nothing else puts this module's own include
-# directory on the search path, and a header of this module that includes another of it would not be found.
+# The warning set goes on the object library alone, where it applies to the generated translation units that
+# compile the headers and stays out of anything the shared library exports. The include directory goes with it: the
+# generated units reach a registering header by its absolute path, and nothing else puts this module's own include
+# directory on the search path, so one header of this module could not include another.
 if(TARGET AdsbDemoBlocksObject)
   target_link_libraries(AdsbDemoBlocksObject PRIVATE gr4adsb-options)
   target_include_directories(AdsbDemoBlocksObject PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")

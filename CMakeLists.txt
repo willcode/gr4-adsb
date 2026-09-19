@@ -71,7 +71,7 @@ if(BUILD_TESTING)
     else()
       target_include_directories(gr4adsb-ut SYSTEM INTERFACE "${GR_BOOST_UT_INCLUDE_DIR}")
     endif()
-    # boost.ut offers itself as a module as well as a header, and the header is what these tests include.
+    # boost.ut ships as a module as well as a header; these tests include the header.
     target_compile_definitions(gr4adsb-ut INTERFACE BOOST_UT_DISABLE_MODULE)
   else()
     message(STATUS "gr4-adsb: Boost.UT was not found, so the block tests are not built")
