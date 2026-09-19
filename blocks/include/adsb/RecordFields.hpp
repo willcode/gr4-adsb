@@ -13,7 +13,7 @@ namespace adsb::detail {
 
 using gr::property_map;
 
-// A record's metadata is read at the exact declared type here, so a value of the wrong type reads as absent.
+// A record's metadata is read at the exact declared type here. A value of another type reads as absent.
 
 /// @brief The value of @p key at the type @p T, or nothing where the key is absent or holds another type.
 template<typename T>

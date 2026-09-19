@@ -27,14 +27,11 @@
 
 /**
  * The console renderer of a decoded Mode S stream: one line of text per record, as a record of its own.
- *
- * It reads the typed keys `ModeSDecode` writes, and the octets only to show a frame nothing decoded. The line is the
- * payload of the record it publishes, so the rendering happens once whatever consumes it.
  */
 namespace adsb {
 
-// Namespace `adsb`, not `gr`, so the registry keys are this package's own. The framework names below are
-// declarations rather than a using-directive: nothing else of `gr` is visible through `adsb`.
+// The blocks sit in namespace `adsb` rather than `gr`, and their registry keys follow from it. The framework
+// names below are individual declarations rather than a using-directive: `adsb` re-exports these alone.
 using gr::Annotated;
 using gr::Async;
 using gr::Block;
@@ -52,38 +49,38 @@ namespace work = gr::work;
 GR_REGISTER_BLOCK(adsb::AdsbPrinter)
 
 /*!
-@brief One decoded record in, the line that describes it out as the payload of a text record.
+@brief Renders one decoded record as a line of text, published as the payload of a record.
 
 The line is
 
     `   29.781  DF17  AB0969  airpos  alt 39000 ft  lat 42.40448  lon -71.34696  [AAL160]`
 
-— the time in seconds from the frame's own `sample_start` and `sample_rate`, the downlink format, the address, what
-the message said, and the aircraft's identification in brackets where an earlier frame from that address gave one.
-A record the decoder left unread prints its protocol and its octets instead. The published record carries no
-trailing newline; `to_stdout` writes one after each line it prints.
+Its columns are the time in seconds from the frame's own `sample_start` and `sample_rate`, the downlink format, the
+address, what the message said, and the aircraft's identification in brackets where an earlier frame from that
+address gave one. A record the decoder left unread prints its protocol and its octets instead. The published record
+carries no trailing newline; `to_stdout` writes one after each line it prints.
 
-The identifications are remembered per address in a table of `table_size` entries, the address least recently seen
-giving way when it is full; that table is the only state here.
+The block remembers the identifications per address in a table of `table_size` entries, giving up the address least
+recently seen when the table is full; that table is the only state here.
 
-`protocol` is `text/adsb` and every key of the input record crosses beneath it, so a consumer can still filter on
-the address or the altitude a line was rendered from. The reserved `source_id` is not written: the vocabulary gives
-that key to the receiver, as the operator's name for it.
+`protocol` is `text/adsb` and every key of the input record crosses beneath it, and a consumer can still filter on
+the address or the altitude a line was rendered from. The reserved `source_id` stays unwritten: the vocabulary
+gives that key to the receiver, as the operator's name for it.
 */
 struct AdsbPrinter : Block<AdsbPrinter> {
     using Description = Doc<R""(
 @brief Renders each decoded Mode S record as one line of text, published as a record and optionally written to stdout.
 
-The consumer of `adsb::ModeSDecode`: it reads that block's typed metadata keys, never the octets, so the line and a
-structured view of the same record cannot disagree. `to_stdout` also writes each line to standard output, which is
-what a run with no consumer attached wants.
+The consumer of `adsb::ModeSDecode`. The block reads that block's typed metadata keys and leaves the octets alone,
+so the line and a structured view of the same record cannot disagree. `to_stdout` also writes each line to standard
+output, for a run that attaches no consumer.
 )"">;
 
     PortIn<DataSet<std::uint8_t>, Async>  in;
     PortOut<DataSet<std::uint8_t>, Async> out;
 
-    Annotated<bool, "to_stdout", Doc<"also write each line to standard output, for a run with no consumer attached">, Visible>                                to_stdout{false};
-    Annotated<gr::Size_t, "table_size", Doc<"addresses whose identification is remembered, least recently seen giving way when full; at least one">, Visible> table_size{256U};
+    Annotated<bool, "to_stdout", Doc<"write each line to standard output">, Visible>                  to_stdout{false};
+    Annotated<gr::Size_t, "table_size", Doc<"addresses whose identification is remembered">, Visible> table_size{256U};
 
     GR_MAKE_REFLECTABLE(AdsbPrinter, in, out, to_stdout, table_size);
 
@@ -133,8 +130,8 @@ what a run with no consumer attached wants.
             std::fflush(stdout);
         }
         if (moved == 0UZ) {
-            // an empty span is the normal case: OK with nothing consumed and nothing published is what the
-            // scheduler reports as a stalled block
+            // an empty span is the normal case: the scheduler reads OK with nothing consumed and nothing
+            // published as a stalled block
             return outSpan.size() == 0UZ ? work::Status::INSUFFICIENT_OUTPUT_ITEMS : work::Status::INSUFFICIENT_INPUT_ITEMS;
         }
         return work::Status::OK;
