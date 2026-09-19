@@ -2,11 +2,11 @@
 #
 # BasicFileSource -> Convert -> InterleavedToComplex -> PpmFramer -> ModeSDecode -> DataSetToPacket -> ZmqPacketSink
 #
-# What a user changes here: file_name, the capture to read, and the framer's sample_rate, which is the capture's
-# own and must be an even integer multiple of 1 MHz.
+# A user edits two settings here: file_name, the capture to read, and the framer's sample_rate, the capture's own
+# rate and an even integer multiple of 1 MHz.
 #
-# The registry has InterleavedToComplex only from float32, so the int16 pairs are widened first. Convert does not
-# scale, which the framer does not need: it nominates on a ratio and decides bits by comparison.
+# The registry has InterleavedToComplex only from float32, so the int16 pairs are widened first. Convert applies
+# no scaling, and the framer needs none: it nominates on a ratio and decides bits by comparison.
 blocks:
   - id: gr::blocks::fileio::BasicFileSource<int16>
     parameters:

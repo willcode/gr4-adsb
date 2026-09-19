@@ -2,10 +2,10 @@
 #
 # ZmqPacketSource -> PacketToDataSet -> AdsbPrinter -> DataSetSink
 #
-# The decode happened at the radio; what crosses the network is the decoder's own record, so this end renders and
-# never re-decodes.
+# The decode happened at the radio. The decoder's own record crosses the network, so this end renders and never
+# re-decodes.
 #
-# What a user changes here: endpoint, which is 127.0.0.1 for both halves on one machine and the receiving
+# A user edits one setting here: endpoint. It is 127.0.0.1 for both halves on one machine, and the receiving
 # machine's address otherwise.
 #
 # AdsbPrinter publishes its line as a record and, with to_stdout, also writes it to standard output.

@@ -2,19 +2,19 @@
 #
 # SoapySource -> PpmFramer -> ModeSDecode -> DataSetToPacket -> ZmqPacketSink
 #
-# What a user changes here: the device gain, the framer's phase_steps and coarse_ratio, and the sink's endpoint.
+# A user edits the device gain, the framer's phase_steps and coarse_ratio, and the sink's endpoint.
 #
 # The device is asked for the rate, the frequency and the gain. 2 MS/s is an even integer multiple of 1 MHz, as
-# the framer requires, and is inside what an RTL-SDR streams without dropping. The gain is given rather than left
-# to the device because an RTL-SDR's own default is 0 dB, which hears nothing at 1090 MHz; 40 dB is a working
-# figure. rx_bandwidths stays an empty vector, which is how the block is told not to ask at all, as against a
-# zero, which it would apply; an RTL-SDR has no analog filter to set anyway.
+# the framer requires, and sits inside what an RTL-SDR streams without dropping. The gain is given rather than
+# left to the device because an RTL-SDR's own default of 0 dB picks up nothing at 1090 MHz; 40 dB is a working
+# figure. rx_bandwidths stays an empty vector, the value that asks the device for no bandwidth at all; a zero
+# would be applied. An RTL-SDR has no analog filter to set in any case.
 #
 # gr::blocks::sdr::RTL2832Source drives librtlsdr directly, without SoapySDR, and takes a different settings set.
 #
-# phase_steps 1 and coarse_ratio 1.0 turn the framer's sub-sample phase search off, which is what a machine as
-# small as a Raspberry Pi 3 needs to keep up at this rate. A machine with the cycles to spare wants the
-# application's 8 and 0.5, which find frames whose preamble falls between samples.
+# phase_steps 1 and coarse_ratio 1.0 turn the framer's sub-sample phase search off, as a machine as small as a
+# Raspberry Pi 3 needs to keep up at this rate. A machine with the cycles to spare takes the application's 8 and
+# 0.5, which find frames whose preamble falls between samples.
 #
 # The sink binds every interface, because the printer connects from another machine; a machine on an untrusted
 # network needs a firewall rule on 5560.
