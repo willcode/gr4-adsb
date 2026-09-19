@@ -29,6 +29,16 @@ table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; }
 th, td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; text-align: left; vertical-align: top; }
 th { background: var(--panel); font-weight: 600; }
 tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, transparent); }
+div.diagram { overflow-x: auto; }
+svg.flowgraph { display: block; margin: 0.9rem 0; }
+svg.flowgraph .node { fill: var(--panel); stroke: var(--muted); stroke-width: 1.2; }
+svg.flowgraph .node.unresolved { stroke-dasharray: 5 4; }
+svg.flowgraph .inner { fill: none; stroke: var(--muted); stroke-width: 1; }
+svg.flowgraph .name { fill: var(--fg); font: 600 13px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+svg.flowgraph .type { fill: var(--muted); font: 11px ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+svg.flowgraph .port { fill: var(--muted); font: 10px ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+svg.flowgraph .edge { fill: none; stroke: var(--accent); stroke-width: 1.3; }
+svg.flowgraph .arrow { fill: var(--accent); }
 </style>
 </head>
 <body>
@@ -39,20 +49,65 @@ tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, tran
 <li><strong>Connections at the top level</strong>: 6</li>
 <li><strong>Subgraphs, all depths</strong>: 0</li>
 </ul>
+<h2>Diagram</h2>
+<div class="diagram">
+<svg class="flowgraph" viewBox="0 0 1617.8 66.0" width="1617.8" height="66.0" style="max-width:100%;height:auto;min-width:1617.8px">
+<defs><marker id="g-arrow" viewBox="0 0 8 6" refX="8" refY="3" markerWidth="8" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M 0 0 L 8 3 L 0 6 z"/></marker></defs>
+<path class="edge" marker-end="url(#g-arrow)" d="M 177.2 33.0 C 214.2 33.0, 214.2 33.0, 251.2 33.0"/>
+<text class="port" x="182.2" y="28.0">out</text>
+<text class="port" x="246.2" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 423.0 33.0 C 460.0 33.0, 460.0 33.0, 497.0 33.0"/>
+<text class="port" x="428.0" y="28.0">out</text>
+<text class="port" x="492.0" y="28.0" text-anchor="end">interleaved</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 701.8 33.0 C 738.8 33.0, 738.8 33.0, 775.8 33.0"/>
+<text class="port" x="706.8" y="28.0">out</text>
+<text class="port" x="770.8" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 974.0 33.0 C 1011.0 33.0, 1011.0 33.0, 1048.0 33.0"/>
+<text class="port" x="979.0" y="28.0">out</text>
+<text class="port" x="1043.0" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 1140.6 33.0 C 1177.6 33.0, 1177.6 33.0, 1214.6 33.0"/>
+<text class="port" x="1145.6" y="28.0">out</text>
+<text class="port" x="1209.6" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 1379.8 33.0 C 1416.8 33.0, 1416.8 33.0, 1453.8 33.0"/>
+<text class="port" x="1384.8" y="28.0">out</text>
+<text class="port" x="1448.8" y="28.0" text-anchor="end">in</text>
+<rect class="node" x="12.0" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
+<text class="name" x="94.6" y="29.0" text-anchor="middle">capture_file</text>
+<text class="type" x="94.6" y="43.0" text-anchor="middle">BasicFileSource&lt;int16&gt;</text>
+<rect class="node" x="251.2" y="12.0" width="171.8" height="42.0" rx="7" ry="7"/>
+<text class="name" x="337.1" y="29.0" text-anchor="middle">widen</text>
+<text class="type" x="337.1" y="43.0" text-anchor="middle">Convert&lt;int16, float32&gt;</text>
+<rect class="node" x="497.0" y="12.0" width="204.8" height="42.0" rx="7" ry="7"/>
+<text class="name" x="599.4" y="29.0" text-anchor="middle">to_complex</text>
+<text class="type" x="599.4" y="43.0" text-anchor="middle">InterleavedToComplex&lt;floa...</text>
+<rect class="node" x="775.8" y="12.0" width="198.2" height="42.0" rx="7" ry="7"/>
+<text class="name" x="874.9" y="29.0" text-anchor="middle">framer</text>
+<text class="type" x="874.9" y="43.0" text-anchor="middle">PpmFramer&lt;complex&lt;float32&gt;&gt;</text>
+<rect class="node" x="1048.0" y="12.0" width="92.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="1094.3" y="29.0" text-anchor="middle">decoder</text>
+<text class="type" x="1094.3" y="43.0" text-anchor="middle">ModeSDecode</text>
+<rect class="node" x="1214.6" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
+<text class="name" x="1297.2" y="29.0" text-anchor="middle">to_packet</text>
+<text class="type" x="1297.2" y="43.0" text-anchor="middle">DataSetToPacket&lt;uint8&gt;</text>
+<rect class="node" x="1453.8" y="12.0" width="152.0" height="42.0" rx="7" ry="7"/>
+<text class="name" x="1529.8" y="29.0" text-anchor="middle">packet_sink</text>
+<text class="type" x="1529.8" y="43.0" text-anchor="middle">ZmqPacketSink&lt;uint8&gt;</text>
+</svg>
+</div>
 <h2>Blocks</h2>
 <div class="table">
 <table>
 <thead>
-<tr><th>Name</th><th>Type</th><th>Kind</th><th>Unique name</th><th>Parameters</th><th>Meta information</th></tr>
+<tr><th>Name</th><th>Type</th><th>Parameters</th><th>Meta information</th></tr>
 </thead>
 <tbody>
-<tr><td>capture_file</td><td>gr::blocks::fileio::BasicFileSource&lt;int16&gt;</td><td>block</td><td></td><td>file_name: &quot;capture.cs16&quot;<br>name: &quot;capture_file&quot;</td><td></td></tr>
-<tr><td>widen</td><td>gr::blocks::basic::Convert&lt;int16, float32&gt;</td><td>block</td><td></td><td>name: &quot;widen&quot;</td><td></td></tr>
-<tr><td>to_complex</td><td>gr::blocks::basic::InterleavedToComplex&lt;float32, complex&lt;float32&gt;&gt;</td><td>block</td><td></td><td>name: &quot;to_complex&quot;</td><td></td></tr>
-<tr><td>framer</td><td>adsb::PpmFramer&lt;complex&lt;float32&gt;&gt;</td><td>block</td><td></td><td>coarse_ratio: 0.500000<br>name: &quot;framer&quot;<br>phase_steps: 8<br>profile: &quot;mode_s&quot;<br>sample_rate: 2000000.000000<br>threshold: 2.000000</td><td></td></tr>
-<tr><td>decoder</td><td>adsb::ModeSDecode</td><td>block</td><td></td><td>name: &quot;decoder&quot;</td><td></td></tr>
-<tr><td>to_packet</td><td>gr::blocks::basic::DataSetToPacket&lt;uint8&gt;</td><td>block</td><td></td><td>frequency_hz: 1090000000.000000<br>name: &quot;to_packet&quot;<br>source_label: &quot;adsb-capture&quot;</td><td></td></tr>
-<tr><td>packet_sink</td><td>gr::blocks::network::ZmqPacketSink&lt;uint8&gt;</td><td>block</td><td></td><td>bind: true<br>endpoint: &quot;tcp://127.0.0.1:5560&quot;<br>linger_ms: 500<br>name: &quot;packet_sink&quot;<br>pattern: &quot;pub&quot;<br>topic: &quot;adsb&quot;</td><td></td></tr>
+<tr><td>capture_file</td><td>gr::blocks::fileio::BasicFileSource<br>&lt;int16&gt;</td><td>file_name: &quot;capture.cs16&quot;<br>name: &quot;capture_file&quot;</td><td></td></tr>
+<tr><td>widen</td><td>gr::blocks::basic::Convert<br>&lt;int16, float32&gt;</td><td>name: &quot;widen&quot;</td><td></td></tr>
+<tr><td>to_complex</td><td>gr::blocks::basic::InterleavedToComplex<br>&lt;float32, complex&lt;float32&gt;&gt;</td><td>name: &quot;to_complex&quot;</td><td></td></tr>
+<tr><td>framer</td><td>adsb::PpmFramer<br>&lt;complex&lt;float32&gt;&gt;</td><td>coarse_ratio: 0.500000<br>name: &quot;framer&quot;<br>phase_steps: 8<br>profile: &quot;mode_s&quot;<br>sample_rate: 2000000.000000<br>threshold: 2.000000</td><td></td></tr>
+<tr><td>decoder</td><td>adsb::ModeSDecode</td><td>name: &quot;decoder&quot;</td><td></td></tr>
+<tr><td>to_packet</td><td>gr::blocks::basic::DataSetToPacket<br>&lt;uint8&gt;</td><td>frequency_hz: 1090000000.000000<br>name: &quot;to_packet&quot;<br>source_label: &quot;adsb-capture&quot;</td><td></td></tr>
+<tr><td>packet_sink</td><td>gr::blocks::network::ZmqPacketSink<br>&lt;uint8&gt;</td><td>bind: true<br>endpoint: &quot;tcp://127.0.0.1:5560&quot;<br>linger_ms: 500<br>name: &quot;packet_sink&quot;<br>pattern: &quot;pub&quot;<br>topic: &quot;adsb&quot;</td><td></td></tr>
 </tbody>
 </table>
 </div>
@@ -60,34 +115,17 @@ tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, tran
 <div class="table">
 <table>
 <thead>
-<tr><th>From</th><th>Port</th><th>To</th><th>Port</th><th>Minimum buffer</th></tr>
+<tr><th>From</th><th>Port</th><th>To</th><th>Port</th><th>Type</th><th>Minimum buffer</th></tr>
 </thead>
 <tbody>
-<tr><td>capture_file</td><td>out</td><td>widen</td><td>in</td><td></td></tr>
-<tr><td>widen</td><td>out</td><td>to_complex</td><td>interleaved</td><td></td></tr>
-<tr><td>to_complex</td><td>out</td><td>framer</td><td>in</td><td></td></tr>
-<tr><td>framer</td><td>out</td><td>decoder</td><td>in</td><td></td></tr>
-<tr><td>decoder</td><td>out</td><td>to_packet</td><td>in</td><td></td></tr>
-<tr><td>to_packet</td><td>out</td><td>packet_sink</td><td>in</td><td></td></tr>
+<tr><td>capture_file</td><td>out</td><td>widen</td><td>in</td><td>int16</td><td></td></tr>
+<tr><td>widen</td><td>out</td><td>to_complex</td><td>interleaved</td><td>float32</td><td></td></tr>
+<tr><td>to_complex</td><td>out</td><td>framer</td><td>in</td><td>complex&lt;float32&gt;</td><td></td></tr>
+<tr><td>framer</td><td>out</td><td>decoder</td><td>in</td><td>gr::DataSet&lt;uint8&gt;</td><td></td></tr>
+<tr><td>decoder</td><td>out</td><td>to_packet</td><td>in</td><td>gr::DataSet&lt;uint8&gt;</td><td></td></tr>
+<tr><td>to_packet</td><td>out</td><td>packet_sink</td><td>in</td><td>gr::Packet&lt;uint8&gt;</td><td></td></tr>
 </tbody>
 </table>
 </div>
-<h2>Diagram</h2>
-<pre class="mermaid">
-flowchart LR
-    gb0["capture_file&lt;br/&gt;gr::blocks::fileio::BasicFileSource&lt;int16&gt;"]
-    gb1["widen&lt;br/&gt;gr::blocks::basic::Convert&lt;int16, float32&gt;"]
-    gb2["to_complex&lt;br/&gt;gr::blocks::basic::InterleavedToComplex&lt;float32, complex&lt;float32&gt;&gt;"]
-    gb3["framer&lt;br/&gt;adsb::PpmFramer&lt;complex&lt;float32&gt;&gt;"]
-    gb4["decoder&lt;br/&gt;adsb::ModeSDecode"]
-    gb5["to_packet&lt;br/&gt;gr::blocks::basic::DataSetToPacket&lt;uint8&gt;"]
-    gb6["packet_sink&lt;br/&gt;gr::blocks::network::ZmqPacketSink&lt;uint8&gt;"]
-    gb0 -- "out to in" --&gt; gb1
-    gb1 -- "out to interleaved" --&gt; gb2
-    gb2 -- "out to in" --&gt; gb3
-    gb3 -- "out to in" --&gt; gb4
-    gb4 -- "out to in" --&gt; gb5
-    gb5 -- "out to in" --&gt; gb6
-</pre>
 </body>
 </html>

@@ -29,6 +29,16 @@ table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; }
 th, td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; text-align: left; vertical-align: top; }
 th { background: var(--panel); font-weight: 600; }
 tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, transparent); }
+div.diagram { overflow-x: auto; }
+svg.flowgraph { display: block; margin: 0.9rem 0; }
+svg.flowgraph .node { fill: var(--panel); stroke: var(--muted); stroke-width: 1.2; }
+svg.flowgraph .node.unresolved { stroke-dasharray: 5 4; }
+svg.flowgraph .inner { fill: none; stroke: var(--muted); stroke-width: 1; }
+svg.flowgraph .name { fill: var(--fg); font: 600 13px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+svg.flowgraph .type { fill: var(--muted); font: 11px ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+svg.flowgraph .port { fill: var(--muted); font: 10px ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+svg.flowgraph .edge { fill: none; stroke: var(--accent); stroke-width: 1.3; }
+svg.flowgraph .arrow { fill: var(--accent); }
 </style>
 </head>
 <body>
@@ -39,17 +49,44 @@ tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, tran
 <li><strong>Connections at the top level</strong>: 3</li>
 <li><strong>Subgraphs, all depths</strong>: 0</li>
 </ul>
+<h2>Diagram</h2>
+<div class="diagram">
+<svg class="flowgraph" viewBox="0 0 807.8 66.0" width="807.8" height="66.0" style="max-width:100%;height:auto">
+<defs><marker id="g-arrow" viewBox="0 0 8 6" refX="8" refY="3" markerWidth="8" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto"><path class="arrow" d="M 0 0 L 8 3 L 0 6 z"/></marker></defs>
+<path class="edge" marker-end="url(#g-arrow)" d="M 177.2 33.0 C 214.2 33.0, 214.2 33.0, 251.2 33.0"/>
+<text class="port" x="182.2" y="28.0">out</text>
+<text class="port" x="246.2" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 416.4 33.0 C 453.4 33.0, 453.4 33.0, 490.4 33.0"/>
+<text class="port" x="421.4" y="28.0">out</text>
+<text class="port" x="485.4" y="28.0" text-anchor="end">in</text>
+<path class="edge" marker-end="url(#g-arrow)" d="M 583.0 33.0 C 620.0 33.0, 620.0 33.0, 657.0 33.0"/>
+<text class="port" x="588.0" y="28.0">out</text>
+<text class="port" x="652.0" y="28.0" text-anchor="end">in</text>
+<rect class="node" x="12.0" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
+<text class="name" x="94.6" y="29.0" text-anchor="middle">packet_source</text>
+<text class="type" x="94.6" y="43.0" text-anchor="middle">ZmqPacketSource&lt;uint8&gt;</text>
+<rect class="node" x="251.2" y="12.0" width="165.2" height="42.0" rx="7" ry="7"/>
+<text class="name" x="333.8" y="29.0" text-anchor="middle">to_record</text>
+<text class="type" x="333.8" y="43.0" text-anchor="middle">PacketToDataSet&lt;uint8&gt;</text>
+<rect class="node" x="490.4" y="12.0" width="92.6" height="42.0" rx="7" ry="7"/>
+<text class="name" x="536.7" y="29.0" text-anchor="middle">printer</text>
+<text class="type" x="536.7" y="43.0" text-anchor="middle">AdsbPrinter</text>
+<rect class="node" x="657.0" y="12.0" width="138.8" height="42.0" rx="7" ry="7"/>
+<text class="name" x="726.4" y="29.0" text-anchor="middle">console</text>
+<text class="type" x="726.4" y="43.0" text-anchor="middle">DataSetSink&lt;uint8&gt;</text>
+</svg>
+</div>
 <h2>Blocks</h2>
 <div class="table">
 <table>
 <thead>
-<tr><th>Name</th><th>Type</th><th>Kind</th><th>Unique name</th><th>Parameters</th><th>Meta information</th></tr>
+<tr><th>Name</th><th>Type</th><th>Parameters</th><th>Meta information</th></tr>
 </thead>
 <tbody>
-<tr><td>packet_source</td><td>gr::blocks::network::ZmqPacketSource&lt;uint8&gt;</td><td>block</td><td></td><td>bind: false<br>endpoint: &quot;tcp://127.0.0.1:5560&quot;<br>max_message_bytes: 65536<br>name: &quot;packet_source&quot;<br>pattern: &quot;sub&quot;<br>topic: &quot;adsb&quot;</td><td></td></tr>
-<tr><td>to_record</td><td>gr::blocks::basic::PacketToDataSet&lt;uint8&gt;</td><td>block</td><td></td><td>name: &quot;to_record&quot;<br>signal_label: &quot;adsb&quot;</td><td></td></tr>
-<tr><td>printer</td><td>adsb::AdsbPrinter</td><td>block</td><td></td><td>name: &quot;printer&quot;<br>table_size: 256<br>to_stdout: true</td><td></td></tr>
-<tr><td>console</td><td>gr::blocks::basic::DataSetSink&lt;uint8&gt;</td><td>block</td><td></td><td>name: &quot;console&quot;<br>signal_name: &quot;adsb-lines&quot;</td><td></td></tr>
+<tr><td>packet_source</td><td>gr::blocks::network::ZmqPacketSource<br>&lt;uint8&gt;</td><td>bind: false<br>endpoint: &quot;tcp://127.0.0.1:5560&quot;<br>max_message_bytes: 65536<br>name: &quot;packet_source&quot;<br>pattern: &quot;sub&quot;<br>topic: &quot;adsb&quot;</td><td></td></tr>
+<tr><td>to_record</td><td>gr::blocks::basic::PacketToDataSet<br>&lt;uint8&gt;</td><td>name: &quot;to_record&quot;<br>signal_label: &quot;adsb&quot;</td><td></td></tr>
+<tr><td>printer</td><td>adsb::AdsbPrinter</td><td>name: &quot;printer&quot;<br>table_size: 256<br>to_stdout: true</td><td></td></tr>
+<tr><td>console</td><td>gr::blocks::basic::DataSetSink<br>&lt;uint8&gt;</td><td>name: &quot;console&quot;<br>signal_name: &quot;adsb-lines&quot;</td><td></td></tr>
 </tbody>
 </table>
 </div>
@@ -57,25 +94,14 @@ tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, tran
 <div class="table">
 <table>
 <thead>
-<tr><th>From</th><th>Port</th><th>To</th><th>Port</th><th>Minimum buffer</th></tr>
+<tr><th>From</th><th>Port</th><th>To</th><th>Port</th><th>Type</th><th>Minimum buffer</th></tr>
 </thead>
 <tbody>
-<tr><td>packet_source</td><td>out</td><td>to_record</td><td>in</td><td></td></tr>
-<tr><td>to_record</td><td>out</td><td>printer</td><td>in</td><td></td></tr>
-<tr><td>printer</td><td>out</td><td>console</td><td>in</td><td></td></tr>
+<tr><td>packet_source</td><td>out</td><td>to_record</td><td>in</td><td>gr::Packet&lt;uint8&gt;</td><td></td></tr>
+<tr><td>to_record</td><td>out</td><td>printer</td><td>in</td><td>gr::DataSet&lt;uint8&gt;</td><td></td></tr>
+<tr><td>printer</td><td>out</td><td>console</td><td>in</td><td>gr::DataSet&lt;uint8&gt;</td><td></td></tr>
 </tbody>
 </table>
 </div>
-<h2>Diagram</h2>
-<pre class="mermaid">
-flowchart LR
-    gb0["packet_source&lt;br/&gt;gr::blocks::network::ZmqPacketSource&lt;uint8&gt;"]
-    gb1["to_record&lt;br/&gt;gr::blocks::basic::PacketToDataSet&lt;uint8&gt;"]
-    gb2["printer&lt;br/&gt;adsb::AdsbPrinter"]
-    gb3["console&lt;br/&gt;gr::blocks::basic::DataSetSink&lt;uint8&gt;"]
-    gb0 -- "out to in" --&gt; gb1
-    gb1 -- "out to in" --&gt; gb2
-    gb2 -- "out to in" --&gt; gb3
-</pre>
 </body>
 </html>
