@@ -17,12 +17,12 @@ The requests it makes:
     POST   /sessions/{id}/stop, DELETE /sessions/{id}   the end of the session
 
 The control plane starts and stops the receiver; it does not carry its output, so this script
-prints no frames. They leave the receiving machine as packets on the graph's own ZeroMQ socket,
-which tools/adsb_listen.py and graphs/adsb-printer.yaml are the two readers of.
+prints no frames. The frames leave the receiving machine as packets on the graph's own ZeroMQ
+socket, which tools/adsb_listen.py and graphs/adsb-printer.yaml read.
 
-A block's settings stop being readable at the moment its session's graph asks to stop, which is
-before the control plane calls the session anything but running, so the last good read of each
-block is kept and reported.
+A block's settings stop being readable at the moment its session's graph asks to stop, while the
+control plane still calls the session running, so this script keeps and reports the last good read
+of each block.
 
 Python 3 and nothing else. Exit 0 when the run finished, 1 when the server refused or did not
 answer, 2 when the command line or the graph file was unusable.
@@ -201,7 +201,7 @@ def main(argv):
     parser.add_argument("--server", default="http://127.0.0.1:20081", help="the control plane's address (default http://127.0.0.1:20081)")
     parser.add_argument("--graph", required=True, help="the graph file to run as a session, e.g. graphs/adsb-rtl.yaml")
     parser.add_argument("--name", default=None, help="the session's name (default: the graph file's base name)")
-    parser.add_argument("--seconds", type=float, default=0.0, help="how long the session runs; without it the session runs until interrupted")
+    parser.add_argument("--seconds", type=float, default=0.0, help="how long the session runs; the default runs until interrupted")
     parser.add_argument("--show", action="append", default=[], metavar="BLOCK",
                         help="print this block's settings when the run ends, by the name the graph file gave it; repeatable")
     return run(parser.parse_args(argv))

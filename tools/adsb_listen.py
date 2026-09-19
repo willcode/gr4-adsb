@@ -11,9 +11,9 @@ every metadata key the decoder wrote, the ICAO address, the downlink format and 
 them.
 
 The wire is gr::network::PacketEnvelope, which GNU Radio 4's own PacketEnvelope.hpp states field by
-field: four ZeroMQ frames -- the subscription topic, a 32-byte little-endian header, a YAML metadata
-document, and the payload. Nothing below imports a GNU Radio module; the header is a fixed table of
-fixed-width little-endian fields and is read from that table alone.
+field. It is four ZeroMQ frames: the subscription topic, a 32-byte little-endian header, a YAML
+metadata document, and the payload. Nothing below imports a GNU Radio module; the header is a fixed
+table of fixed-width little-endian fields and is read from that table alone.
 
 pyzmq is the one requirement: ZeroMQ is a wire protocol (ZMTP) over the socket, not a datagram format,
 so a raw socket would have to implement the handshake and the framing. Install it with
@@ -87,8 +87,8 @@ def parse_header(frame):
 def parse_metadata(frame):
     """The top-level keys of the YAML metadata document, as `gr::pmt::yaml` writes one.
 
-    An entry is `key: <tag> <value>`, unindented, and a string carries an empty tag and so reads with two
-    spaces and a quoted value. A nested value -- which no key this receiver writes uses -- is left out
+    An entry is `key: <tag> <value>`, unindented; a string carries an empty tag and so reads with two
+    spaces and a quoted value. A nested value, which no key this receiver writes uses, is left out
     rather than half read, and its key is reported with an empty value so the omission is visible.
     """
     values = {}
@@ -227,9 +227,9 @@ def listen(endpoint, topic, seconds, count):
 def main(argv):
     parser = argparse.ArgumentParser(description="Print the decoded ADS-B frames a GNU Radio 4 receiver publishes over ZeroMQ.")
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560",
-                        help="the receiver's ZeroMQ endpoint (default tcp://127.0.0.1:5560); the receiving machine's address goes here when the two halves are on two machines")
-    parser.add_argument("--topic", default="adsb", help="the subscription prefix the receiver publishes under (default adsb); an empty string takes everything")
-    parser.add_argument("--seconds", type=float, default=0.0, help="stop after this many seconds; without it the reader runs until interrupted")
+                        help="the receiver's ZeroMQ endpoint (default tcp://127.0.0.1:5560)")
+    parser.add_argument("--topic", default="adsb", help="the subscription prefix (default adsb); an empty string takes everything")
+    parser.add_argument("--seconds", type=float, default=0.0, help="stop after this many seconds; the default runs until interrupted")
     parser.add_argument("--count", type=int, default=0, help="stop after this many packets")
     options = parser.parse_args(argv)
 
