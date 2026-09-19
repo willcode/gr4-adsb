@@ -214,8 +214,8 @@ second reader of the same socket sees exactly what the first one sees. The sampl
 `graphs/adsb-capture.yaml` reads `capture.cs16` from the directory the graph is run in; put the
 path to a recording of your own in its `file_name`, and give the framer that recording's rate.
 
-`docs/` holds one page per graph file — its blocks, its connections and a flowchart — written by
-`graphdoc`, the framework's own describer of a graph file.
+`docs/` holds one page per graph file: the blocks it names, their parameters, the connections
+between them, and a flowchart of the chain.
 
 **The gain decides whether the receiver hears anything, and the two radios want very different
 figures.** A HackRF at 1090 MHz needs far more gain than it does lower down: about 100 dB, which
