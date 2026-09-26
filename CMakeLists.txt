@@ -15,17 +15,17 @@ include(CTest)
 
 option(GR4ADSB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
-# gnuradio4         core: Block, Graph, Scheduler, DataSet, the block registry and the plugin loader
-# gnuradio4Library  the algorithm layer, the pulse-position scanner this package's framer runs on among it
-# gnuradio4Blocks   the families the rest of the chain is built from: basic, fileio, and sdr for a live device
-# GnuRadioBlockLib  gr_add_block_library, which builds blocks/ into this package's plugin
+# * gnuradio4: core, with Block, Graph, Scheduler, DataSet, the block registry and the plugin loader
+# * gnuradio4Library: the algorithm layer, the pulse-position scanner this package's framer runs on among it
+# * gnuradio4Blocks: the families the rest of the chain is built from: basic, fileio, and sdr for a live device
+# * GnuRadioBlockLib: gr_add_block_library, which builds blocks/ into this package's plugin
 find_package(gnuradio4 CONFIG REQUIRED)
 find_package(gnuradio4Library CONFIG REQUIRED)
 find_package(gnuradio4Blocks CONFIG REQUIRED)
 find_package(GnuRadioBlockLib CONFIG REQUIRED)
 
-# gnuradio4::gnuradio-options keeps its warning flags behind $<BUILD_INTERFACE:...>, so they do not reach a
-# consuming project; this is the set this package compiles with instead.
+# gnuradio4::gnuradio-options keeps its warning flags behind $<BUILD_INTERFACE:...>, so they do not reach a consuming
+# project; this is the set this package compiles with instead.
 add_library(gr4adsb-options INTERFACE)
 target_compile_options(
   gr4adsb-options
@@ -47,8 +47,8 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-interference-size>
             $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
             # GCC 16 at -O3 reports `std::vector`'s own destructor as reading an uninitialized `_M_start`, on
-            # `PpmScanner::config.pulseSlots`, a member that has a default member initializer and is always
-            # constructed. GNU Radio 4 carries the same suppression in its own cmake/CompilerWarnings.cmake.
+            # `PpmScanner::config.pulseSlots`, a member that has a default member initializer and is always constructed.
+            # GNU Radio 4 carries the same suppression in its own cmake/CompilerWarnings.cmake.
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
@@ -78,9 +78,9 @@ if(BUILD_TESTING)
   endif()
 endif()
 
-# blocks/ holds the framer, the Mode S message layer and the printer, in the namespace `adsb`, as one block library
-# a graph runner loads from a plugin directory. app/ holds the one-process application and the ConsoleSink it ends
-# its chain with. Everything else in either chain is the SDK's and is used as installed, rungraph among it.
+# blocks/ holds the framer, the Mode S message layer and the printer, in the namespace `adsb`, as one block library a
+# graph runner loads from a plugin directory. app/ holds the one-process application and the ConsoleSink it ends its
+# chain with. Everything else in either chain is the SDK's and is used as installed, rungraph among it.
 add_subdirectory(blocks)
 add_subdirectory(app)
 

@@ -1,8 +1,8 @@
-# One executable of Boost.UT suites per block. They build their frames field by field from the standard and run
-# short graphs over synthetic streams; none reads a file or opens a radio.
+# One executable of Boost.UT suites per block. They build their frames field by field from the standard and run short
+# graphs over synthetic streams; none reads a file or opens a radio.
 #
-# The blocks are compiled into these tests rather than loaded from the library: a failure then points at a header
-# rather than at what a plugin directory held.
+# The blocks are compiled into these tests rather than loaded from the library: a failure then points at a header rather
+# than at what a plugin directory held.
 foreach(qa_test IN ITEMS qa_PpmFramer qa_ModeSDecode qa_AdsbPrinter)
   add_executable(${qa_test} ${qa_test}.cpp)
   target_link_libraries(
