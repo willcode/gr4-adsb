@@ -15,6 +15,12 @@ include(CTest)
 
 option(GR4ADSB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
+# The directory holding the recorded capture the two recording tests read. An empty or absent directory is not an error:
+# each test prints the path it wanted and exits 77, which CTest registers as a skip.
+set(GR4_RECORDINGS_DIR
+    ""
+    CACHE PATH "Directory holding the recorded capture the recording tests read; empty makes those tests skip")
+
 # * gnuradio4: core, with Block, Graph, Scheduler, DataSet, the block registry and the plugin loader
 # * gnuradio4Library: the algorithm layer, the pulse-position scanner this package's framer runs on among it
 # * gnuradio4Blocks: the families the rest of the chain is built from: basic, fileio, and sdr for a live device

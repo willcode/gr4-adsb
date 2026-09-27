@@ -1,9 +1,15 @@
 # One executable of Boost.UT suites per block. They build their frames field by field from the standard and run short
-# graphs over synthetic streams; none reads a file or opens a radio.
+# graphs over synthetic streams; none reads a file or opens a radio. Two more executables replay a recorded capture.
 #
 # The blocks are compiled into these tests rather than loaded from the library: a failure then points at a header rather
 # than at what a plugin directory held.
-foreach(qa_test IN ITEMS qa_PpmFramer qa_ModeSDecode qa_AdsbPrinter)
+foreach(
+  qa_test IN
+  ITEMS qa_PpmFramer
+        qa_ModeSDecode
+        qa_AdsbPrinter
+        qa_PpmRecording
+        qa_AdsbRecording)
   add_executable(${qa_test} ${qa_test}.cpp)
   target_link_libraries(
     ${qa_test}
@@ -23,3 +29,20 @@ endforeach()
 
 # The decoder's test carries its records across gr::blocks::basic's two packet adapters.
 target_link_libraries(qa_ModeSDecode PRIVATE gnuradio4::gr-basic)
+
+# The two recording tests read a 1090 MHz capture from GR4_RECORDINGS_DIR: qa_PpmRecording runs the pulse-position
+# scanner over it, and qa_AdsbRecording runs the whole chain from the file source to the printer. Each has an executable
+# of its own, since exit 77 is a whole binary's status: an absent capture skips that test alone. The label `recording`
+# selects or excludes both.
+target_link_libraries(qa_AdsbRecording PRIVATE gnuradio4::gr-basic gnuradio4::gr-fileio)
+foreach(qa_test IN ITEMS qa_PpmRecording qa_AdsbRecording)
+  set_tests_properties(
+    ${qa_test}
+    PROPERTIES SKIP_RETURN_CODE
+               77
+               LABELS
+               recording
+               ENVIRONMENT
+               "GR4_RECORDINGS_DIR=${GR4_RECORDINGS_DIR}")
+endforeach()
+set_tests_properties(qa_AdsbRecording PROPERTIES TIMEOUT 300)

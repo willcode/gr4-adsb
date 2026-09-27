@@ -373,16 +373,29 @@ run by, are installed with GNU Radio 4.
 ctest --test-dir build
 ```
 
-Three tests, one beside each block: the framing, the message decode and the rendering of a line.
-Every frame in them is built field by field from the standard rather than taken from a capture, so
-none needs a recording or a radio. They leave the application and `ConsoleSink` uncovered: a replay
-over a recorded capture checks those end to end, and a capture large enough to carry frames is too
-large to ship.
+Three tests sit one beside each block: the framing, the message decode and the rendering of a
+line. Every frame in them is built field by field from the standard rather than taken from a
+capture, so none needs a recording or a radio.
+
+Two more tests replay a recorded 1090 MHz capture at 2 MS/s,
+`ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data`. `qa_PpmRecording` runs the
+pulse-position scanner over it at four thresholds, and `qa_AdsbRecording` runs the whole chain from
+a file source to the printer and checks the three lines the capture decodes to. The capture is too
+large to ship. Name the directory holding it at configure time:
+
+```
+cmake -S . -B build -DGR4_RECORDINGS_DIR=<dir>
+```
+
+Without the capture the two tests report a skip. Both carry the label `recording`, so
+`ctest --test-dir build -LE recording` leaves them out. The application and `ConsoleSink` stay
+uncovered by the tests: a replay with `adsb --file` checks those end to end.
 
 ## Layout
 
-`blocks/` holds the three ADS-B blocks: the headers under `include/adsb/`, one test beside each in
-`test/`, and the pulse-position scanner's benchmark in `benchmarks/`. The headers are compiled
+`blocks/` holds the three ADS-B blocks: the headers under `include/adsb/`, one test beside each
+and the two recording tests in `test/`, and the pulse-position scanner's benchmark in
+`benchmarks/`. The headers are compiled
 twice: into the block library, whose generated units register the blocks under their keys, and into
 whatever names the type directly.
 
