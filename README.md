@@ -124,21 +124,21 @@ else.
 device string any other Soapy program takes; the application splits it into the two settings the
 block takes, so a bare `--device hackrf` works too.
 
-| option | default | what it sets |
-|---|---|---|
-| `--device STR` | — | SoapySDR device string |
-| `--file PATH` | — | replay a capture instead of a device |
-| `--frequency HZ` | 1090e6 | center frequency |
-| `--rate HZ` | 4e6 | sample rate, an even multiple of 1 MHz |
-| `--bandwidth HZ` | device | analog RF bandwidth |
-| `--gain DB` | device | receive gain |
-| `--agc on\|off` | off | ask for the device's own AGC |
-| `--threshold R` | 2 | nomination ratio, greater than one |
-| `--phase-steps N` | 8 | offsets per candidate; 1 turns the search off |
-| `--coarse-ratio R` | 0.5 | share of the threshold for the integer test |
-| `--seconds N` | 0 | stop after N seconds; 0 runs to the end |
-| `--verbose` | off | print the registry keys the plugins bring, then run |
-| `--plugin-dir DIR` | built in | where `--verbose` loads from; repeatable |
+| option             | default  | what it sets                                 |
+| ------------------ | -------- | -------------------------------------------- |
+| `--device STR`     | —        | SoapySDR device string                       |
+| `--file PATH`      | —        | replay a capture instead of a device         |
+| `--frequency HZ`   | 1090e6   | center frequency                             |
+| `--rate HZ`        | 4e6      | sample rate, an even multiple of 1 MHz       |
+| `--bandwidth HZ`   | device   | analog RF bandwidth                          |
+| `--gain DB`        | device   | receive gain                                 |
+| `--agc on\|off`    | off      | ask for the device's own AGC                 |
+| `--threshold R`    | 2        | nomination ratio, greater than one           |
+| `--phase-steps N`  | 8        | offsets per candidate; 1 disables the search |
+| `--coarse-ratio R` | 0.5      | share of the threshold for the integer test  |
+| `--seconds N`      | 0        | stop after N seconds; 0 runs to the end      |
+| `--verbose`        | off      | print the plugins' registry keys, then run   |
+| `--plugin-dir DIR` | built in | where `--verbose` loads from; repeatable     |
 
 Exit codes are 0 on a clean stop, 2 on a bad command line and 1 on a graph error, each with the
 reason on stderr. Every run prints its counters at exit: samples, candidates, nominations, admitted
@@ -213,12 +213,12 @@ altitude, the position. The far end renders and never re-decodes, and a second r
 socket sees exactly what the first one sees. The samples stay where they were read, 2 MS/s of
 complex floats being 16 MB/s that nothing downstream needs.
 
-| file | where it runs | what it is |
-|---|---|---|
-| `graphs/adsb-hackrf.yaml` | at the antenna | the capture half on a HackRF |
-| `graphs/adsb-rtl.yaml` | at the antenna | the capture half on an RTL-SDR |
-| `graphs/adsb-capture.yaml` | anywhere | the same from a recorded capture |
-| `graphs/adsb-printer.yaml` | at the desk | the printer half |
+| file                       | where it runs  | what it is                     |
+| -------------------------- | -------------- | ------------------------------ |
+| `graphs/adsb-hackrf.yaml`  | at the antenna | the capture half on a HackRF   |
+| `graphs/adsb-rtl.yaml`     | at the antenna | the capture half on an RTL-SDR |
+| `graphs/adsb-capture.yaml` | anywhere       | the same, from a recording     |
+| `graphs/adsb-printer.yaml` | at the desk    | the printer half               |
 
 `graphs/adsb-capture.yaml` reads `capture.cs16` from the directory the graph is run in; put the
 path to a recording of your own in its `file_name`, and give the framer that recording's rate.
