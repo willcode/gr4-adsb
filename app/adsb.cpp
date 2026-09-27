@@ -400,8 +400,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // The scheduler's result carries the reason a block refused to start, such as the framer's exception on a rate
-    // that does not divide into whole slots.
+    // The scheduler's result carries the error a block raised at start, such as the framer's exception on a rate that
+    // does not divide into whole slots.
     std::atomic<bool> done{false};
     std::atomic<bool> failed{false};
     std::thread       runner([&scheduler, &done, &failed] {
