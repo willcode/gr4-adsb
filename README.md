@@ -83,6 +83,10 @@ The registry keys, which a graph file names and `adsb --verbose` prints:
 - `adsb::ModeSDecode` — reads a frame's record and publishes the same octets with typed metadata
 - `adsb::AdsbPrinter` — reads a decoded record and publishes one rendered line as a record
 
+Against a core with block labels, each block declares the family `adsb` and its role: the framer
+and the decoder `processor`, the printer `sink`. The configure compiles a probe against the core
+it finds and says which it got.
+
 They ship in one library, `libAdsbDemoBlocksShared.so`. `blocks/README.md` states the record the
 three pass between them, field by field.
 
@@ -387,9 +391,12 @@ large to ship. Name the directory holding it at configure time:
 cmake -S . -B build -DGR4_RECORDINGS_DIR=<dir>
 ```
 
-Without the capture the two tests report a skip. Both carry the label `recording`, so
+Without the capture the two recording tests report a skip. Both carry the label `recording`, so
 `ctest --test-dir build -LE recording` leaves them out. The application and `ConsoleSink` stay
 uncovered by the tests: a replay with `adsb --file` checks those end to end.
+
+Where the core has block labels, `qa_AdsbLabels` checks the registry key, the family and the role
+of each block.
 
 ## Layout
 

@@ -46,3 +46,20 @@ foreach(qa_test IN ITEMS qa_PpmRecording qa_AdsbRecording)
                "GR4_RECORDINGS_DIR=${GR4_RECORDINGS_DIR}")
 endforeach()
 set_tests_properties(qa_AdsbRecording PROPERTIES TIMEOUT 300)
+
+# qa_AdsbLabels checks the key a graph file names each block by, and the family and the role each block declares to a
+# registry. It is built where the core has block labels.
+if(GR4ADSB_BLOCK_LABELS)
+  add_executable(qa_AdsbLabels qa_AdsbLabels.cpp)
+  target_link_libraries(
+    qa_AdsbLabels
+    PRIVATE gr4adsb-blocks
+            gr4adsb-options
+            gr4adsb-ut
+            gnuradio4::gnuradio-blocklib-core)
+  if(TARGET gnuradio4::gnuradio-plugin)
+    target_link_libraries(qa_AdsbLabels PRIVATE gnuradio4::gnuradio-plugin)
+  endif()
+  add_test(NAME qa_AdsbLabels COMMAND qa_AdsbLabels)
+  set_tests_properties(qa_AdsbLabels PROPERTIES TIMEOUT 60)
+endif()

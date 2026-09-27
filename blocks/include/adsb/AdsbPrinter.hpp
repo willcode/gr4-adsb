@@ -23,6 +23,7 @@
 #include <gnuradio-4.0/Port.hpp>
 #include <gnuradio-4.0/annotated.hpp>
 
+#include <adsb/BlockLabels.hpp>
 #include <adsb/RecordFields.hpp>
 
 /**
@@ -75,6 +76,9 @@ The consumer of `adsb::ModeSDecode`. The block reads that block's typed metadata
 so the line and a structured view of the same record cannot disagree. `to_stdout` also writes each line to standard
 output, for a run that attaches no consumer.
 )"">;
+#ifdef GR4ADSB_BLOCK_LABELS
+    static constexpr auto attributes = gr::block::describe(1U, kFamilyLabel, gr::block::labels::role::sink);
+#endif
 
     PortIn<DataSet<std::uint8_t>, Async>  in;
     PortOut<DataSet<std::uint8_t>, Async> out;

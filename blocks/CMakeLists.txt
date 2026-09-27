@@ -22,14 +22,16 @@ gr_add_block_library(
 add_library(gr4adsb-blocks INTERFACE)
 target_include_directories(gr4adsb-blocks INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(gr4adsb-blocks INTERFACE gnuradio4::gnuradio-core gnuradio4::gnuradio-algorithm)
+if(GR4ADSB_BLOCK_LABELS)
+  target_compile_definitions(gr4adsb-blocks INTERFACE GR4ADSB_BLOCK_LABELS)
+endif()
 
 # The warning set goes on the object library alone, where it applies to the generated translation units that compile the
-# headers and stays out of anything the shared library exports. The include directory goes with it: the generated units
-# reach a registering header by its absolute path, and nothing else puts this module's own include directory on the
-# search path, so one header of this module could not include another.
+# headers and stays out of anything the shared library exports. The include directory and the label definition go with
+# it through gr4adsb-blocks: the generated units reach a registering header by its absolute path, and nothing else puts
+# this module's own include directory on the search path, so one header of this module could not include another.
 if(TARGET AdsbDemoBlocksObject)
-  target_link_libraries(AdsbDemoBlocksObject PRIVATE gr4adsb-options)
-  target_include_directories(AdsbDemoBlocksObject PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+  target_link_libraries(AdsbDemoBlocksObject PRIVATE gr4adsb-options gr4adsb-blocks)
 endif()
 
 if(BUILD_TESTING)

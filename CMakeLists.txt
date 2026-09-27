@@ -58,6 +58,36 @@ target_compile_options(
             $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
             $<$<BOOL:${GR4ADSB_WARNINGS_AS_ERRORS}>:-Werror>)
 
+# A block describes itself to the core with labels, declared through gr::block::describe() of
+# <gnuradio-4.0/BlockAttributes.hpp>. A core may carry an earlier form of the header under the same name and include
+# guard, and __has_include cannot tell that form from the label form. The configure therefore compiles a probe against
+# the core it found, anew at each run, and defines GR4ADSB_BLOCK_LABELS where the probe compiles. The three block
+# headers declare their labels under that macro alone, so they build without labels against any other core.
+include(CheckCXXSourceCompiles)
+include(CMakePushCheckState)
+cmake_push_check_state(RESET)
+set(CMAKE_REQUIRED_LIBRARIES gnuradio4::gnuradio-core)
+set(CMAKE_REQUIRED_QUIET ON)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+unset(GR4ADSB_CORE_HAS_BLOCK_LABELS CACHE)
+check_cxx_source_compiles(
+  [[
+#include <gnuradio-4.0/BlockAttributes.hpp>
+struct Probe {
+    static constexpr auto attributes = gr::block::describe(1U, gr::block::labels::role::processor);
+};
+static_assert(gr::block::attributesOf<Probe>().labels.size() == 1U);
+int main() { return 0; }
+]]
+  GR4ADSB_CORE_HAS_BLOCK_LABELS)
+cmake_pop_check_state()
+set(GR4ADSB_BLOCK_LABELS ${GR4ADSB_CORE_HAS_BLOCK_LABELS})
+if(GR4ADSB_BLOCK_LABELS)
+  message(STATUS "gr4-adsb: block labels DECLARED (the core has gr::block::describe)")
+else()
+  message(STATUS "gr4-adsb: block labels NOT declared (the core has no gr::block::describe)")
+endif()
+
 # The block tests are written in Boost.UT, which GNU Radio 4 does not install: an installed `ut` package, or
 # -DGR_BOOST_UT_INCLUDE_DIR=<dir> naming a source-built copy. Without it the tests are not built.
 if(BUILD_TESTING)

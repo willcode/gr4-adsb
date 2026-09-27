@@ -24,6 +24,8 @@
 
 #include <gnuradio-4.0/algorithm/digital/Ppm.hpp>
 
+#include <adsb/BlockLabels.hpp>
+
 namespace adsb {
 
 // The blocks sit in namespace `adsb` rather than `gr`, and their registry keys follow from it. The framework
@@ -90,6 +92,9 @@ short frames, which carry no self-checking parity, and CRC-failed long frames.
 The samples not yet decided sit in a buffer whose bound `start()` fixes from the rate and the framing. Samples past
 that bound are dropped and counted, oldest first.
 )"">;
+#ifdef GR4ADSB_BLOCK_LABELS
+    static constexpr auto attributes = gr::block::describe(1U, kFamilyLabel, gr::block::labels::role::processor);
+#endif
 
     PortIn<T>                             in;
     PortOut<DataSet<std::uint8_t>, Async> out;

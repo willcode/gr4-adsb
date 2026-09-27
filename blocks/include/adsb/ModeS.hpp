@@ -23,6 +23,7 @@
 #include <gnuradio-4.0/Port.hpp>
 #include <gnuradio-4.0/annotated.hpp>
 
+#include <adsb/BlockLabels.hpp>
 #include <adsb/RecordFields.hpp>
 
 /**
@@ -271,6 +272,9 @@ that carries the message occupies bits 33 to 88 of a long frame.
 Every decoded field is a metadata key holding an integer, a double, a bool or a string, and the payload stays the
 frame's octets, so a record crosses a process whole.
 )"">;
+#ifdef GR4ADSB_BLOCK_LABELS
+    static constexpr auto attributes = gr::block::describe(1U, kFamilyLabel, gr::block::labels::role::processor);
+#endif
 
     PortIn<DataSet<std::uint8_t>, Async>  in;
     PortOut<DataSet<std::uint8_t>, Async> out;
