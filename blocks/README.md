@@ -154,3 +154,9 @@ against itself. One case carries a decoded record through `basic::DataSetToPacke
 field back at its own type. `test/qa_AdsbPrinter` asserts the lines the pair renders, because the
 line is the printer's whole contract. `test/qa_PpmFramer` drives the framer over synthetic
 magnitude streams built from the standard's preamble and chip timing.
+
+`test/qa_PpmRecording` and `test/qa_AdsbRecording` replay a recorded 1090 MHz capture from
+`GR4_RECORDINGS_DIR`: the first runs the pulse-position scanner over it, the second the chain from
+a file source to the printer, checking the three lines the capture decodes to. Both carry the
+label `recording` and report a skip when the capture is absent. `test/qa_AdsbLabels`, built where
+the core has block labels, checks the key, the family and the role each block registers.

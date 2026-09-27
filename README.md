@@ -16,6 +16,11 @@ The columns are the time in seconds from the frame's position in the stream, the
 the ICAO address, what the message said, and the aircraft identification in brackets once an
 earlier frame from that address has given one.
 
+The code comes from `rework`, the development branch of GNU Radio 4's blocks repository, where
+the three blocks sat in the `adsb` block family. This package holds that family whole: the four
+headers, every test and the benchmark, in the namespace `adsb`. It builds against an installed
+GNU Radio 4 from upstream's main branch or from the development branch.
+
 ## Quick start
 
 The package builds against an installed GNU Radio 4; see Building for what that has to include.
