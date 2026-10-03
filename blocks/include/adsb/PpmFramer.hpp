@@ -7,6 +7,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <limits>
 #include <span>
@@ -270,7 +271,7 @@ that bound are dropped and counted, oldest first.
         };
 
         // one scan pass over everything undecided plus `arriving`, in slices small enough that the sink cannot overrun
-        const auto scan = [&](std::span<const T> arriving) {
+        const auto scan = [&](std::span<const T> arriving) -> std::expected<void, gr::Error> {
             _work.insert(_work.end(), arriving.begin(), arriving.end());
             if constexpr (kAligns) {
                 // the kernel decides on magnitude and interpolates on the samples. Both grow together here, the
@@ -291,16 +292,19 @@ that bound are dropped and counted, oldest first.
                 const std::size_t headroom  = room - onOut;
                 const std::size_t slice     = headroom >= available ? available : std::min(available, window - 1UZ + headroom);
                 _scanner.seek(_workStart + base);
-                std::size_t done = 0UZ;
+                std::expected<std::size_t, gr::Error> done{0UZ};
                 if constexpr (kAligns) {
                     done = _scanner.consume(std::span<const float>(_mags).subspan(base, slice), std::span<const T>(_work).subspan(base, slice), sink);
                 } else {
                     done = _scanner.consume(std::span<const float>(_work).subspan(base, slice), sink);
                 }
-                if (done == 0UZ) {
+                if (!done) {
+                    return std::unexpected(std::move(done.error()));
+                }
+                if (*done == 0UZ) {
                     break;
                 }
-                base += done;
+                base += *done;
             }
             // the buffer holds one window and the reserve, and drops from the oldest end: the newest samples are
             // the ones still worth deciding
@@ -316,6 +320,14 @@ that bound are dropped and counted, oldest first.
             }
             _workStart += base;
             prunePending(_workStart);
+            return {};
+        };
+        // a framing the kernel refuses on its re-check stops the block; the records already built are published
+        const auto fail = [&](gr::Error error) {
+            this->emitErrorMessage("processBulk", std::move(error));
+            std::ignore = inSpan.consume(inSpan.size());
+            outSpan.publish(outConnected ? onOut : 0UZ);
+            return work::Status::ERROR;
         };
 
         const std::span<const T> items(inSpan.begin(), inSpan.size());
@@ -337,7 +349,9 @@ that bound are dropped and counted, oldest first.
             if (*value == _rate) {
                 continue;
             }
-            scan(items.subspan(cut, tag.at - cut));
+            if (auto scanned = scan(items.subspan(cut, tag.at - cut)); !scanned) {
+                return fail(std::move(scanned.error()));
+            }
             cut = tag.at;
             // the geometry changes at this sample; nothing spanning it can be decided under either rate
             _tailBanked += _work.size();
@@ -356,7 +370,9 @@ that bound are dropped and counted, oldest first.
             _scanner.prepare(_framing, slot);
             prunePending(_workStart);
         }
-        scan(items.subspan(cut));
+        if (auto scanned = scan(items.subspan(cut)); !scanned) {
+            return fail(std::move(scanned.error()));
+        }
 
         nSamples += inSpan.size();
         nCandidates  = _retired.candidates + _scanner.counters.candidates;

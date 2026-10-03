@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include <gnuradio-4.0/Graph.hpp>
@@ -131,7 +132,7 @@ struct Scanned {
     std::size_t       fed    = std::min(data.size(), stride);
     while (true) {
         scanner.seek(base);
-        const std::size_t done = scanner.consume(data.subspan(base, fed - base), [&result](const PpmFrame& frame) { result.frames.push_back({std::vector<std::uint8_t>(frame.octets.begin(), frame.octets.end()), frame.bits, frame.format, frame.remainder, frame.strong, frame.weak, frame.position, frame.outcome}); });
+        const std::size_t done = scanner.consume(data.subspan(base, fed - base), [&result](const PpmFrame& frame) { result.frames.push_back({std::vector<std::uint8_t>(frame.octets.begin(), frame.octets.end()), frame.bits, frame.format, frame.remainder, frame.strong, frame.weak, frame.position, frame.outcome}); }).value();
         base += done;
         if (fed == data.size()) {
             if (done == 0UZ) {
@@ -727,6 +728,31 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
             expect(eq(metaFloat(seen.records[1UZ], "sample_rate"), 4.0e6F));
             expect(eq(metaU64(seen.records[1UZ], "sample_start"), change + 32UZ));
         }
+    };
+
+    "a framing the kernel refuses on its re-check stops the block with an error"_test = [] {
+        const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
+        const std::vector<float>        wave   = padded(std::span<const std::uint8_t>(anchor));
+        const auto                      drive  = [&wave](MagFramer& block) {
+            std::vector<Record> scratch(4UZ);
+            InputSpan<float>    inSpan(std::span<const float>(wave), 0UZ, std::span<const gr::Tag>{});
+            OutputSpan<Record>  outSpan(std::span<Record>(scratch), 0UZ, nullptr, true);
+            const auto          status = block.processBulk(inSpan, outSpan);
+            return std::tuple{status, inSpan.consumed, outSpan.count};
+        };
+
+        MagFramer good                           = make<MagFramer>(modeSSettings());
+        const auto [goodStatus, goodIn, goodOut] = drive(good);
+        expect(goodStatus == gr::work::Status::OK) << "the intact framing scans";
+        expect(eq(goodOut, 1UZ)) << "the anchor is published";
+
+        MagFramer broken                  = make<MagFramer>(modeSSettings());
+        broken._scanner.config.formatBits = 0UZ;
+        const auto [status, taken, out]   = drive(broken);
+        expect(status == gr::work::Status::ERROR) << "a refused framing is the block's error";
+        expect(eq(taken, wave.size())) << "the input is consumed";
+        expect(eq(out, 0UZ)) << "no frame was decided before the refusal";
+        expect(eq(goodIn, wave.size()));
     };
 
     "noise nominates rarely and publishes nothing"_test = [] {
