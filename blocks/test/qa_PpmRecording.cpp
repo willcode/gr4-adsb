@@ -129,7 +129,7 @@ struct Sweep {
         result.samples += pairs;
 
         scanner.seek(workStart);
-        const std::size_t done = scanner.consume(std::span<const float>(work), onFrame);
+        const std::size_t done = scanner.consume(std::span<const float>(work), onFrame).value();
         work.erase(work.begin(), work.begin() + static_cast<std::ptrdiff_t>(done));
         workStart += done;
     }
