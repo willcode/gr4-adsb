@@ -101,7 +101,7 @@ int main() {
 
     for (std::size_t which = 0UZ; which < scanners.size(); ++which) {
         arms.push_back({labels[which], [&, which] {
-                            const std::size_t done = scanners[which].consume(std::span<const float>(streams[which]), [](const PpmFrame&) {});
+                            const std::size_t done = scanners[which].consume(std::span<const float>(streams[which]), [](const PpmFrame&) {}).value();
                             return static_cast<double>(done);
                         }});
     }
