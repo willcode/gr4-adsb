@@ -14,7 +14,7 @@ The blocks are in `adsb`, a namespace of this package's own outside `gr`, and th
 no key here collides with one of the SDK's.
 
 ```
-… -> basic::Abs -> adsb::PpmFramer(profile: mode_s)    -> adsb::ModeSDecode -> adsb::AdsbPrinter -> …
+… -> math::Abs -> adsb::PpmFramer(profile: mode_s)    -> adsb::ModeSDecode -> adsb::AdsbPrinter -> …
                           octets                             typed fields          one text line
 ```
 

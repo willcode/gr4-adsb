@@ -72,7 +72,7 @@ struct PpmFramer : Block<PpmFramer<T>, NoTagPropagation> {
 3.5 and 4.5 microseconds, data from 8.0, and a frame of 56 or 112 bits chosen by the downlink format's top bit.
 
 At `float` the input is magnitude, `|x|` rather than `|x|^2`, and `threshold` is a ratio of magnitudes;
-`gr::blocks::basic::Abs<std::complex<float>>` produces such a stream on its `abs` port.
+`gr::blocks::math::Abs<std::complex<float>>` produces such a stream on its `out` port.
 
 At `std::complex<float>` the block decides every position at the sub-sample phase its preamble sits on. A position
 first passes a coarse test at `threshold * coarse_ratio`, and the block re-tests it at `phase_steps` offsets

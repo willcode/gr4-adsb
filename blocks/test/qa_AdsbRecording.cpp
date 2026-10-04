@@ -37,6 +37,7 @@
 #include <adsb/PpmFramer.hpp>
 #include <gnuradio-4.0/basic/ConverterBlocks.hpp>
 #include <gnuradio-4.0/fileio/BasicFileIo.hpp>
+#include <gnuradio-4.0/math/Unary.hpp>
 
 namespace qa_adsb_recording {
 
@@ -95,7 +96,7 @@ int main() {
     auto&     source    = flow.emplaceBlock<gr::blocks::fileio::BasicFileSource<std::int16_t>>({{"file_name", path.string()}});
     auto&     widen     = flow.emplaceBlock<gr::blocks::basic::Convert<std::int16_t, float>>();
     auto&     pairs     = flow.emplaceBlock<gr::blocks::basic::InterleavedToComplex<float, std::complex<float>>>();
-    auto&     magnitude = flow.emplaceBlock<gr::blocks::basic::Abs<std::complex<float>>>();
+    auto&     magnitude = flow.emplaceBlock<gr::blocks::math::Abs<std::complex<float>>>();
     auto&     framer    = flow.emplaceBlock<adsb::PpmFramer<float>>({{"sample_rate", kRate}, {"profile", std::string("mode_s")}});
     auto&     decoder   = flow.emplaceBlock<adsb::ModeSDecode>();
     auto&     printer   = flow.emplaceBlock<adsb::AdsbPrinter>();
@@ -104,7 +105,7 @@ int main() {
     bool wired = flow.connect<"out", "in">(source, widen).has_value();
     wired      = wired && flow.connect<"out", "interleaved">(widen, pairs).has_value();
     wired      = wired && flow.connect<"out", "in">(pairs, magnitude).has_value();
-    wired      = wired && flow.connect<"abs", "in">(magnitude, framer).has_value();
+    wired      = wired && flow.connect<"out", "in">(magnitude, framer).has_value();
     wired      = wired && flow.connect<"out", "in">(framer, decoder).has_value();
     wired      = wired && flow.connect<"out", "in">(decoder, printer).has_value();
     wired      = wired && flow.connect<"out", "in">(printer, sink).has_value();
