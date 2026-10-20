@@ -31,8 +31,6 @@
  */
 namespace adsb {
 
-// The blocks sit in namespace `adsb` rather than `gr`, and their registry keys follow from it. The framework
-// names below are individual declarations rather than a using-directive: `adsb` re-exports these alone.
 using gr::Annotated;
 using gr::Async;
 using gr::Block;
