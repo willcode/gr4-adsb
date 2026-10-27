@@ -79,7 +79,7 @@ both the nomination and the bits, and travels on the record as `sample_phase`: a
 `sample_start + sample_phase`. Only this instantiation reads `phase_steps` and `coarse_ratio`.
 
 `sample_rate` must be an even integer multiple of 1 MHz, so that a half-microsecond slot spans a whole number of
-samples. A `sample_rate` tag overrides the setting for the samples after it; a tagged rate of any other value is a
+samples. A `gr:sample_rate` tag overrides the setting for the samples after it; a tagged rate of any other value is a
 counted refusal that leaves the previous rate standing.
 
 The parity is checked here because the remainder decides containment: an admitted frame consumes its whole window
@@ -118,7 +118,7 @@ that bound are dropped and counted, oldest first.
     std::uint64_t nShortFormat    = 0ULL; ///< short-format frames, which carry no self-checking parity
     std::uint64_t nPublished      = 0ULL; ///< records produced for `out`, counted even while the port is unconnected
     std::uint64_t nTagsDropped    = 0ULL; ///< input tags that fell outside every published frame, including the ones still waiting
-    std::uint64_t nRateRefused    = 0ULL; ///< sample_rate tags whose value is not an even multiple of 1 MHz
+    std::uint64_t nRateRefused    = 0ULL; ///< gr:sample_rate tags whose value is not an even multiple of 1 MHz
     std::uint64_t nTailDropped    = 0ULL; ///< samples whose window never completed, including those still held
     std::uint64_t nOverrunDropped = 0ULL; ///< samples dropped from the working buffer at its bound
 
@@ -331,7 +331,7 @@ that bound are dropped and counted, oldest first.
         const std::span<const T> items(inSpan.begin(), inSpan.size());
         std::size_t              cut = 0UZ;
         for (const Arriving& tag : _arriving) {
-            const auto entry = tag.map->find(property_map::key_type(gr::tag::SAMPLE_RATE.shortKey()));
+            const auto entry = tag.map->find(property_map::key_type(gr::tag::SAMPLE_RATE.key()));
             if (entry == tag.map->end()) {
                 continue;
             }
@@ -405,12 +405,12 @@ that bound are dropped and counted, oldest first.
         record.timestamp = 0;
 
         property_map& meta = record.meta_information[0UZ];
-        meta.insert_or_assign(property_map::key_type(gr::tag::TRIGGER_NAME.shortKey()), pmt::Value(std::string_view(frame_label.value)));
+        meta.insert_or_assign(property_map::key_type(gr::tag::TRIGGER_NAME.name()), pmt::Value(std::string_view(frame_label.value)));
         // the framing this record was read under; a decoder downstream names its own sub-kind over this one
         meta.insert_or_assign(property_map::key_type("protocol"), pmt::Value(std::string_view(profile.value)));
         meta.insert_or_assign(property_map::key_type("sample_start"), pmt::Value(static_cast<std::uint64_t>(start)));
         meta.insert_or_assign(property_map::key_type("sequence"), pmt::Value(_sequence));
-        meta.insert_or_assign(property_map::key_type(gr::tag::SAMPLE_RATE.shortKey()), pmt::Value(_rate));
+        meta.insert_or_assign(property_map::key_type(gr::tag::SAMPLE_RATE.name()), pmt::Value(_rate));
         meta.insert_or_assign(property_map::key_type("mode_s_format"), pmt::Value(static_cast<gr::Size_t>(frame.format)));
         meta.insert_or_assign(property_map::key_type("crc_remainder"), pmt::Value(static_cast<gr::Size_t>(frame.remainder)));
         if (frame.outcome != gr::digital::PpmOutcome::ShortFormat) {
