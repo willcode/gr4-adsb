@@ -12,11 +12,10 @@
 #include <adsb/ModeS.hpp>
 #include <adsb/PpmFramer.hpp>
 
-/*
- * The test for what the package's three blocks declare to a registry: the key a graph file names each one by, the
- * family `adsb` and the role. The registry here is a local one, filled the way a block library's generated unit fills
- * the process-wide one, so the attributes read back are the ones a plugin carries.
- */
+/*| role: the test for what the package's three blocks declare to a registry: the key a graph file names each one by,
+        the family `adsb` and the role. The registry here is a local one, filled the way a block library's generated
+        unit fills the process-wide one, so the attributes read back are the ones a plugin carries.
+*/
 namespace {
 
 template<typename TBlock>

@@ -1,16 +1,13 @@
-/* The whole ADS-B chain over a recorded 1090 MHz capture.
- *
- * The test has an executable of its own because its exit status is the whole binary's: an absent recording skips
- * this test alone, and the synthetic tests still run. The graph holds GNU Radio 4's file source, converters and
- * magnitude, then this package's framer, decoder and printer, the chain a consumer builds.
- *
- * The capture has no metadata file. Its name carries the rate and the format, the two facts the chain needs. The
- * directory arrives as GR4_RECORDINGS_DIR. With the directory or the file absent the run prints the path it looked
- * for and exits 77, which CTest counts as a skip.
- *
- * Budget: 60.7 million samples through seven blocks, a few seconds in a release build. The CTest timeout of 300 s
- * and the graph's own 240 s watchdog are margin for a slower machine.
- */
+/*| role: the whole ADS-B chain over a recorded 1090 MHz capture.
+    why: the test has an executable of its own because its exit status is the whole binary's: an absent recording skips
+        this test alone, and the synthetic tests still run. The graph holds GNU Radio 4's file source, converters and
+        magnitude, then this package's framer, decoder and printer, the chain a consumer builds.
+    why: the capture has no metadata file. Its name carries the rate and the format, the two facts the chain needs. The
+        directory arrives as GR4_RECORDINGS_DIR. With the directory or the file absent the run prints the path it looked
+        for and exits 77, which CTest counts as a skip.
+    measured: 60.7 million samples through seven blocks, a few seconds in a release build. The CTest timeout of 300 s
+        and the graph's own 240 s watchdog are margin for a slower machine.
+*/
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -43,22 +40,24 @@ namespace qa_adsb_recording {
 
 using Record = gr::DataSet<std::uint8_t>;
 
-/// ADS-B at 1090 MHz, 2 MS/s, interleaved little-endian int16 I/Q, 30.4 seconds.
+/*| frame: ADS-B at 1090 MHz, 2 MS/s, interleaved little-endian int16 I/Q, 30.4 seconds.
+ */
 constexpr std::string_view kCapture = "ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data";
 constexpr float            kRate    = 2.0e6f;
 
-/// @brief What the capture decodes to: the time in seconds, and the line without its time field.
-///
-/// The two values are checked apart because they answer different questions. The tail is the message — the format,
-/// the address and every field read out of it — and is exact. The time is where the framer put the frame's first
-/// payload sample, which is a property of the framing and not of this family, so it is held to a millisecond.
+/*| role: what the capture decodes to: the time in seconds, and the line without its time field.
+    why: the two values are checked apart because they answer different questions. The tail is the message — the format,
+        the address and every field read out of it — and is exact. The time is where the framer put the frame's first
+        payload sample, which is a property of the framing and not of this family, so it is held to a millisecond.
+*/
 struct Expected {
     double           seconds = 0.0;
     std::string_view tail{};
 };
 
-/// Both position frames carry a clear Q bit, so their altitudes are the 100 ft code and not the 25 ft field, and
-/// both are even halves, so no pair completes and no position is stated. The velocity frame is subtype 1.
+/*| role: both position frames carry a clear Q bit, so their altitudes are the 100 ft code and not the 25 ft field, and
+        both are even halves, so no pair completes and no position is stated. The velocity frame is subtype 1.
+*/
 constexpr std::array<Expected, 3UZ> kExpected{{
     {2.767, "DF17  AA1BAA  airpos  alt 3600 ft"},
     {4.713, "DF17  AA1BAA  airpos  alt 3700 ft"},

@@ -20,10 +20,12 @@ using gr::digital::PpmScanner;
 constexpr std::size_t kSamplesPerCall = 65536UZ;
 constexpr std::size_t kRepeats        = 9UZ;
 
-/// The preamble in half-microsecond slots: pulses at 0.0, 1.0, 3.5 and 4.5 microseconds.
+/*| frame: the preamble in half-microsecond slots: pulses at 0.0, 1.0, 3.5 and 4.5 microseconds.
+ */
 constexpr std::array<int, 16> kPreamble{1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0};
 
-/// The anchor frame, a published extended squitter whose parity is the bare CRC.
+/*| role: the anchor frame, a published extended squitter whose parity is the bare CRC.
+ */
 constexpr std::array<std::uint8_t, 14> kAnchor{0x8DU, 0x48U, 0x40U, 0xD6U, 0x20U, 0x2CU, 0xC3U, 0x71U, 0xC3U, 0x2CU, 0xE0U, 0x57U, 0x60U, 0x98U};
 
 struct Rng {
@@ -38,7 +40,8 @@ struct Rng {
     [[nodiscard]] double uniform() noexcept { return static_cast<double>((next() >> 11U) + 1ULL) * 0x1p-53; }
 };
 
-/// Rayleigh magnitudes, the envelope a complex Gaussian channel presents with no signal in it.
+/*| role: Rayleigh magnitudes, the envelope a complex Gaussian channel presents with no signal in it.
+ */
 [[nodiscard]] std::vector<float> noiseStream(std::size_t count) {
     Rng                rng;
     std::vector<float> samples(count);
@@ -48,7 +51,8 @@ struct Rng {
     return samples;
 }
 
-/// The anchor repeated with 40 microseconds of silence between bursts, at @p slot samples a slot.
+/*| role: the anchor repeated with 40 microseconds of silence between bursts, at slot samples a slot.
+ */
 [[nodiscard]] std::vector<float> anchorStream(std::size_t count, std::size_t slot) {
     std::vector<float> samples;
     samples.reserve(count + (16UZ + 224UZ) * slot);

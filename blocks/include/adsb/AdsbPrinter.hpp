@@ -26,9 +26,6 @@
 #include <adsb/BlockLabels.hpp>
 #include <adsb/RecordFields.hpp>
 
-/**
- * The console renderer of a decoded Mode S stream: one line of text per record, as a record of its own.
- */
 namespace adsb {
 
 using gr::Annotated;
@@ -47,24 +44,27 @@ namespace work = gr::work;
 
 GR_REGISTER_BLOCK(adsb::AdsbPrinter)
 
-/*!
-@brief Renders one decoded record as a line of text, published as the payload of a record.
-
-The line is
-
-    `   29.781  DF17  AB0969  airpos  alt 39000 ft  lat 42.40448  lon -71.34696  [AAL160]`
-
-Its columns are the time in seconds from the frame's own `sample_start` and `sample_rate`, the downlink format, the
-address, what the message said, and the aircraft's identification in brackets where an earlier frame from that
-address gave one. A record the decoder left unread prints its protocol and its octets instead. The published record
-carries no trailing newline; `to_stdout` writes one after each line it prints.
-
-The block remembers the identifications per address in a table of `table_size` entries, giving up the address least
-recently seen when the table is full; that table is the only state here.
-
-`protocol` is `text/adsb` and every key of the input record crosses beneath it, and a consumer can still filter on
-the address or the altitude a line was rendered from. The reserved `source_id` stays unwritten: the vocabulary
-gives that key to the receiver, as the operator's name for it.
+/*| role: the last block of the receive chain, after ModeSDecode. Renders each decoded record as one line of
+        console text and publishes it as a record; to_stdout also prints it.
+    frame: the line, for an airborne position:
+        `   29.781  DF17  AB0969  airpos  alt 39000 ft  lat 42.40448  lon -71.34696  [AAL160]`
+        Columns: seconds from the frame's own sample_start and sample_rate, the downlink format, the address,
+        what the message said, and the identification in brackets when an earlier frame from that address
+        gave one. A record the decoder left unread prints its protocol and its octets instead.
+    contract: the output record's items are the line's bytes, with no trailing newline (to_stdout adds one).
+        Its metadata is the input's, every key, plus protocol = text/adsb, so a consumer can still filter on
+        the address or altitude. source_id is left unwritten: the vocabulary gives that key to the receiver.
+    contract: table_size bounds the address-to-identification table, the block's only state; when full, the
+        address seen least recently is dropped. A change applies at once and trims the table. Zero throws
+        and keeps the previous size.
+    contract: nLines counts lines published, nNamed lines that carried a bracketed identification, nEvicted
+        addresses dropped from the table. They are plain members: read them on the block's thread or after the
+        graph stops.
+    why: the block reads ModeSDecode's typed metadata keys, never the octets, so the line and a structured
+        view of the same record cannot disagree.
+    verified-by: qa_AdsbPrinter "each message renders the line its fields describe, and the time comes off the frame"
+    verified-by: qa_AdsbPrinter "the name table is bounded, and the address it gives up loses its name"
+    verified-by: qa_AdsbPrinter "the text record carries the line, the input's keys and a protocol of its own"
 */
 struct AdsbPrinter : Block<AdsbPrinter> {
     using Description = Doc<R""(
@@ -86,12 +86,10 @@ output, for a run that attaches no consumer.
 
     GR_MAKE_REFLECTABLE(AdsbPrinter, in, out, to_stdout, table_size);
 
-    // Totals, read by the owning thread and reported at stop().
-    std::uint64_t nLines   = 0ULL; ///< lines rendered and published
-    std::uint64_t nNamed   = 0ULL; ///< lines that carried an identification the table remembered
-    std::uint64_t nEvicted = 0ULL; ///< addresses the identification table gave up to make room
+    std::uint64_t nLines   = 0ULL;
+    std::uint64_t nNamed   = 0ULL;
+    std::uint64_t nEvicted = 0ULL;
 
-    /// @brief One remembered identification and when the table last touched it.
     struct Named {
         std::string   callsign{};
         std::uint64_t touched = 0ULL;
@@ -132,14 +130,14 @@ output, for a run that attaches no consumer.
             std::fflush(stdout);
         }
         if (moved == 0UZ) {
-            // an empty span is the normal case: the scheduler reads OK with nothing consumed and nothing
-            // published as a stalled block
+            /*| trap: returning OK with nothing consumed or published reads to the scheduler as a stalled block.
+                verified-by: qa_AdsbPrinter "an empty span says so rather than reporting progress it did not make"
+            */
             return outSpan.size() == 0UZ ? work::Status::INSUFFICIENT_OUTPUT_ITEMS : work::Status::INSUFFICIENT_INPUT_ITEMS;
         }
         return work::Status::OK;
     }
 
-    /// @brief The text record @p record becomes: the line as its items, and the input's own metadata beneath it.
     [[nodiscard]] DataSet<std::uint8_t> render(const DataSet<std::uint8_t>& record) {
         const property_map  none{};
         const property_map& meta = record.meta_information.empty() ? none : record.meta_information[0UZ];
@@ -178,14 +176,14 @@ output, for a run that attaches no consumer.
         const double                    seconds = detail::timeOf(meta).value_or(0.0);
         const std::optional<gr::Size_t> format  = detail::read<gr::Size_t>(meta, "mode_s_format");
         if (!format.has_value()) {
-            // a frame the decoder would not read: its protocol and its octets
             const std::string protocol = textOf(meta, "protocol");
             return std::format("{:9.3f}  {}  {}", seconds, protocol.empty() ? std::string("mode_s") : protocol, hexOf(std::span<const std::uint8_t>(record.signal_values)));
         }
 
         const std::string address    = textOf(meta, "mode_s_icao");
         const std::string identified = remember(address, detail::readText(meta, "adsb_callsign"));
-        // an identification message's own line already names the aircraft, so the bracket would say it twice
+        /*| why: an identification message's own line already names the aircraft; no bracket repeats it.
+         */
         const bool bracket = !identified.empty() && textOf(meta, "adsb_message") != "identification";
         if (bracket) {
             ++nNamed;
@@ -196,7 +194,9 @@ output, for a run that attaches no consumer.
     [[nodiscard]] static std::string detailOf(const property_map& meta) {
         const std::string message = textOf(meta, "adsb_message");
         if (message.empty()) {
-            return textOf(meta, "protocol"); // an admitted frame of a format that carries no ADS-B message
+            /*| role: an admitted frame of a format that carries no ADS-B message prints its protocol.
+             */
+            return textOf(meta, "protocol");
         }
         if (message == "identification") {
             return std::format("ident   callsign {}", textOf(meta, "adsb_callsign"));
@@ -241,7 +241,10 @@ output, for a run that attaches no consumer.
         return text;
     }
 
-    /// @brief The identification known for @p address, updated first where @p callsign states one.
+    /*| contract: the identification known for address, updated first when callsign holds one. An empty address
+            returns callsign without touching the table; an unknown address with no callsign returns empty and
+            adds nothing.
+    */
     [[nodiscard]] std::string remember(const std::string& address, const std::optional<std::string>& callsign) {
         if (address.empty()) {
             return callsign.value_or(std::string{});

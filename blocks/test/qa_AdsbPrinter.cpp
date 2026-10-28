@@ -1,8 +1,7 @@
-/* The test for the console renderer.
- *
- * `ModeSDecode` produces the records here from frames built to the standard, so a case states what the pair does
- * end to end and cannot drift from the decoder's own key spellings. Each case asserts the line.
- */
+/*| role: tests the console renderer.
+    why: `ModeSDecode` produces the records here from frames built to the standard, so a case states what the pair does
+        end to end and cannot drift from the decoder's own key spellings. Each case asserts the line.
+*/
 #include <boost/ut.hpp>
 
 #include <algorithm>
@@ -34,7 +33,8 @@ using Record = gr::DataSet<std::uint8_t>;
 
 constexpr float kRate = 2.0e6f;
 
-/// @brief A long Mode S frame under construction, written by the standard's bit numbers.
+/*| role: a long Mode S frame under construction, written by the standard's bit numbers.
+ */
 struct Frame {
     std::vector<std::uint8_t> octets = std::vector<std::uint8_t>(14UZ, std::uint8_t{0});
 
@@ -78,7 +78,8 @@ struct Frame {
     return record;
 }
 
-/// @brief @p frames through `ModeSDecode` and then `AdsbPrinter`, as the lines and the records the printer published.
+/*| role: frames through `ModeSDecode` and then `AdsbPrinter`, as the lines and the records the printer published.
+ */
 struct Printed {
     std::vector<std::string> lines{};
     std::vector<Record>      records{};
@@ -127,7 +128,8 @@ struct Printed {
     return value == nullptr ? std::nullopt : std::optional<std::string>{std::string(*value)};
 }
 
-/// @brief An identification message from @p address spelling @p characters, padded to eight.
+/*| role: an identification message from address spelling characters, padded to eight.
+ */
 [[nodiscard]] Frame identityFrame(std::uint32_t address, std::span<const std::uint32_t> characters) {
     Frame frame = squitter(address, 4U);
     frame.put(38UZ, 3UZ, 3U);
@@ -137,7 +139,8 @@ struct Printed {
     return frame;
 }
 
-/// `AAL160` and `UAL597` in the six-bit set: letters are 1 to 26 and digits 48 to 57.
+/*| role: `AAL160` and `UAL597` in the six-bit set: letters are 1 to 26 and digits 48 to 57.
+ */
 constexpr std::array<std::uint32_t, 6UZ> kAal160{1U, 1U, 12U, 49U, 54U, 48U};
 constexpr std::array<std::uint32_t, 6UZ> kUal597{21U, 1U, 12U, 53U, 57U, 55U};
 

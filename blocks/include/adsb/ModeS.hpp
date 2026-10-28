@@ -26,13 +26,13 @@
 #include <adsb/BlockLabels.hpp>
 #include <adsb/RecordFields.hpp>
 
-/**
- * The message layer of the 1090 MHz Mode S downlink, as a record adapter over `DataSet<std::uint8_t>`.
- *
- * A frame arrives as 7 or 14 whole octets from `adsb::PpmFramer` at the `mode_s` profile, with the framer's account
- * of how they were taken. Bit numbering follows the standard throughout: bit 1 is the most significant bit of the
- * first octet.
- */
+/*| role: the message layer of the 1090 MHz Mode S downlink: the bit-field readers of the frame and the
+        ModeSDecode block, a record adapter over DataSet<std::uint8_t>.
+    frame: a frame is 7 or 14 whole octets from PpmFramer at the mode_s profile. Bit numbers follow the
+        standard: bit 1 is the most significant bit of the first octet.
+    origin: ICAO Annex 10 Volume IV for the framing and the AC altitude code; RTCA DO-260B for the extended
+        squitter messages.
+*/
 namespace adsb {
 
 using gr::Annotated;
@@ -52,7 +52,9 @@ namespace work = gr::work;
 
 namespace detail {
 
-/// @brief @p count bits of @p frame starting at bit number @p first, one based. Bits past the frame read as zero.
+/*| contract: count bits of frame starting at one-based bit number first, most significant first. Bits past the
+        frame's end read as zero.
+*/
 [[nodiscard]] inline std::uint32_t field(std::span<const std::uint8_t> frame, std::size_t first, std::size_t count) noexcept {
     std::uint32_t value = 0U;
     for (std::size_t i = 0UZ; i < count; ++i) {
@@ -63,11 +65,15 @@ namespace detail {
     return value;
 }
 
-/// @brief The six-bit character set of the identification message, RTCA DO-260B 2.2.3.2; `#` marks a code the set
-///        leaves unassigned, which is dropped rather than rendered.
+/*| frame: the six-bit character set of the identification message. `#` marks an unassigned code, which
+        identityOf() drops rather than renders.
+    origin: RTCA DO-260B 2.2.3.2.
+*/
 constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ##### ###############0123456789######";
 
-/// @brief The eight-character aircraft identification of a type code 1 to 4 message, its trailing pad removed.
+/*| contract: the eight-character identification of a type code 1 to 4 message, bits 41 to 88, with
+        unassigned codes dropped and the trailing space pad removed.
+*/
 [[nodiscard]] inline std::string identityOf(std::span<const std::uint8_t> frame) {
     std::string name;
     for (std::size_t i = 0UZ; i < 8UZ; ++i) {
@@ -82,16 +88,19 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
     return name;
 }
 
-/// @brief The pressure altitude in feet the AC field's 100 ft code names, or nothing when the code is unassigned.
-///
-/// ICAO Annex 10 Volume IV, the AC altitude code with its Q bit clear. The twelve bits are, most significant first,
-/// C1 A1 C2 A2 C4 A4 B1 Q B2 D2 B4 D4. The altitude is a count of 500 ft steps in a reflected binary code on
-/// D2 D4 A1 A2 A4 B1 B2 B4, and a 100 ft digit within the step in the three C pulses, which count the other way on
-/// an odd step. Three of the eight C codes are unassigned and the code floor is -1200 ft.
+/*| contract: the pressure altitude in feet of the AC field's 100 ft code (Q bit clear), or nothing for an
+        unassigned C code or a result below the code floor of -1200 ft.
+    frame: the twelve bits, most significant first: C1 A1 C2 A2 C4 A4 B1 Q B2 D2 B4 D4. A count of 500 ft
+        steps is a reflected binary code on D2 D4 A1 A2 A4 B1 B2 B4. The 100 ft digit within the step is in
+        the three C pulses and counts the other way on an odd step. Three of the eight C codes are unassigned.
+    origin: ICAO Annex 10 Volume IV, the AC altitude code.
+    verified-by: qa_ModeSDecode "the hundred foot code decodes where the Q bit is clear, which transponders in service still send"
+*/
 [[nodiscard]] inline std::optional<std::int32_t> gillhamAltitude(std::uint32_t ac12) noexcept {
     const auto pulse = [ac12](std::size_t position) { return (ac12 >> (12UZ - position)) & 1U; };
 
-    // the five assigned C codes, C1 C2 C4 read as a three-bit number, and the 100 ft digit each of them names
+    /*| frame: the five assigned C codes, C1 C2 C4 read as a three-bit number, each with its 100 ft digit.
+     */
     constexpr std::array<std::pair<std::uint32_t, std::int32_t>, 5UZ> kHundreds{{{0b001U, 1}, {0b011U, 2}, {0b010U, 3}, {0b110U, 4}, {0b100U, 5}}};
     const std::uint32_t                                               code  = (pulse(1UZ) << 2U) | (pulse(3UZ) << 1U) | pulse(5UZ);
     const auto                                                        digit = std::ranges::find(kHundreds, code, [](const auto& entry) { return entry.first; });
@@ -99,12 +108,15 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
         return std::nullopt;
     }
 
-    // the 500 ft steps: D2 D4 A1 A2 A4 B1 B2 B4 at their positions in the field, most significant pulse first
+    /*| frame: the 500 ft step pulses D2 D4 A1 A2 A4 B1 B2 B4 by their field positions, most significant first.
+     */
     constexpr std::array<std::size_t, 8UZ> kStepPulses{10UZ, 12UZ, 2UZ, 4UZ, 6UZ, 7UZ, 9UZ, 11UZ};
     std::int32_t                           steps   = 0;
     std::uint32_t                          running = 0U;
     for (const std::size_t position : kStepPulses) {
-        running ^= pulse(position); // a reflected binary code decodes as the running parity of its leading bits
+        /*| why: a reflected binary code decodes as the running parity of its leading bits.
+         */
+        running ^= pulse(position);
         steps = (steps << 1) | static_cast<std::int32_t>(running);
     }
 
@@ -113,13 +125,16 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
     return feet >= -1200 ? std::optional<std::int32_t>{feet} : std::nullopt;
 }
 
-/// @brief The barometric altitude in feet of the twelve-bit AC field, or nothing where the field states none.
-///
-/// RTCA DO-260B 2.2.3.2. The Q bit at field position 8 selects the coding: set, the remaining eleven bits are 25 ft
-/// increments offset by -1000 ft; clear, the field is the 100 ft code above, which transponders in service do send.
+/*| contract: the barometric altitude in feet of the twelve-bit AC field, or nothing where it states none. All
+        zeros states no altitude.
+    frame: the Q bit, field position 8, selects the coding. Set: the other eleven bits are 25 ft increments
+        from -1000 ft. Clear: the 100 ft code of gillhamAltitude(), which transponders in service still send.
+    origin: RTCA DO-260B 2.2.3.2.
+    verified-by: qa_ModeSDecode "the twenty-five foot altitude field decodes where its Q bit is set"
+*/
 [[nodiscard]] inline std::optional<std::int32_t> baroAltitude(std::uint32_t ac12) noexcept {
     if (ac12 == 0U) {
-        return std::nullopt; // the all-zero code states that no altitude is available
+        return std::nullopt;
     }
     if (((ac12 >> 4U) & 1U) != 0U) {
         const auto increments = static_cast<std::int32_t>(((ac12 >> 5U) << 4U) | (ac12 & 0x0FU));
@@ -128,12 +143,13 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
     return gillhamAltitude(ac12);
 }
 
-/// @brief The number of longitude zones at latitude @p degrees, RTCA DO-260B A.1.7.2.2's NL function.
-///
-/// The two poleward cases and the ceiling of 59 are the values the function is defined to take where the equation
-/// degenerates. At the equator the quotient is exactly 60, and the ceiling decides whether the floor reads 59.
+/*| contract: the number of longitude zones at latitude degrees, the NL function.
+    trap: the two poleward cases and the cap of 59 are the defined values where the equation degenerates. At
+        the equator the quotient is exactly 60, and the cap keeps the floor at 59.
+    origin: RTCA DO-260B A.1.7.2.2.
+*/
 [[nodiscard]] inline std::int32_t longitudeZones(double degrees) noexcept {
-    constexpr double kZones = 15.0; // NZ, the number of geographic latitude zones in a quadrant
+    constexpr double kZones = 15.0; /*| frame: NZ, the geographic latitude zones in a quadrant */
     const double     from   = std::abs(degrees);
     if (from >= 87.0) {
         return from > 87.0 ? 1 : 2;
@@ -143,26 +159,31 @@ constexpr std::string_view kIdentityCharacters = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ###
     return std::min(59, static_cast<std::int32_t>(std::floor(2.0 * std::numbers::pi / std::acos(1.0 - numerator / (cosine * cosine)))));
 }
 
-/// @brief Floored modulo, the remainder the compact position arithmetic is defined over.
-///
-/// `std::fmod` keeps the sign of its left operand, which puts a negative zone index hundreds of degrees away rather
-/// than one zone over.
+/*| contract: floored modulo, the remainder the compact position arithmetic is defined over.
+    trap: std::fmod keeps the sign of its left operand and puts a negative zone index hundreds of degrees away
+        rather than one zone over.
+*/
 [[nodiscard]] inline double flooredMod(double value, double modulus) noexcept { return value - modulus * std::floor(value / modulus); }
 
-/// @brief One half of a compact position pair, held until its complement arrives.
+/*| role: one half of a compact position pair, held until its complement arrives.
+    frame: latitude and longitude are the seventeen-bit encoded values; at is seconds into the stream from the
+        frame's own sample position.
+*/
 struct CprHalf {
-    std::uint32_t latitude  = 0U;  ///< the encoded latitude, seventeen bits
-    std::uint32_t longitude = 0U;  ///< the encoded longitude, seventeen bits
-    double        at        = 0.0; ///< seconds into the stream, from the frame's own sample position
+    std::uint32_t latitude  = 0U;
+    std::uint32_t longitude = 0U;
+    double        at        = 0.0;
     bool          have      = false;
 };
 
-/// @brief The globally unambiguous position an even and an odd half name, RTCA DO-260B A.1.7.4.
-///
-/// The function returns nothing when the two halves resolve into different longitude zones, as a pair straddling
-/// a zone boundary does; the next pair resolves.
+/*| contract: the globally unambiguous latitude and longitude in degrees that an even and an odd half name,
+        taken from the newer half. Nothing when the halves fall in different longitude zones, as a pair
+        straddling a zone boundary does; the next pair resolves.
+    origin: RTCA DO-260B A.1.7.4.
+    verified-by: qa_ModeSDecode "an even and an odd half resolve the position they were encoded from, to the format's own resolution"
+*/
 [[nodiscard]] inline std::optional<std::pair<double, double>> globalPosition(const CprHalf& even, const CprHalf& odd) noexcept {
-    constexpr double kScale = 131072.0; // 2^17, the encoded fraction of a zone
+    constexpr double kScale = 131072.0; /*| frame: 2^17, the encoded fraction of a zone */
 
     const double evenLatitude = static_cast<double>(even.latitude) / kScale;
     const double oddLatitude  = static_cast<double>(odd.latitude) / kScale;
@@ -171,7 +192,9 @@ struct CprHalf {
     double fromEven = (360.0 / 60.0) * (flooredMod(index, 60.0) + evenLatitude);
     double fromOdd  = (360.0 / 59.0) * (flooredMod(index, 59.0) + oddLatitude);
     if (fromEven >= 270.0) {
-        fromEven -= 360.0; // the encoding's southern half, which the zone index states as the range above 270 degrees
+        /*| frame: the southern hemisphere, which the zone index states as the range above 270 degrees.
+         */
+        fromEven -= 360.0;
     }
     if (fromOdd >= 270.0) {
         fromOdd -= 360.0;
@@ -196,7 +219,9 @@ struct CprHalf {
     return std::pair{latitude, longitude};
 }
 
-/// @brief The message an extended squitter's type code names, RTCA DO-260B 2.2.3.2.
+/*| contract: the adsb_message name of an extended squitter's type code.
+    origin: RTCA DO-260B 2.2.3.2.
+*/
 [[nodiscard]] inline std::string_view messageOf(std::uint32_t typeCode) noexcept {
     if (typeCode == 0U) {
         return "no_position";
@@ -214,7 +239,9 @@ struct CprHalf {
         return "airborne_velocity";
     }
     if (typeCode <= 22U) {
-        return "airborne_position_gnss"; // the same layout with a height above the ellipsoid, which this block leaves undecoded
+        /*| frame: the airborne position layout with a height above the ellipsoid, left undecoded.
+         */
+        return "airborne_position_gnss";
     }
     if (typeCode == 28U) {
         return "aircraft_status";
@@ -228,34 +255,40 @@ struct CprHalf {
     return "reserved";
 }
 
-/// @brief The address the announced-address formats carry in bits 9 to 32: the all-call reply and the two squitters.
-///
-/// The remaining downlink formats put the address under the parity rather than in a field; a frame of one of them
-/// states no address.
+/*| contract: true for the downlink formats that carry the address in bits 9 to 32: 11 (all-call reply), 17
+        and 18 (the squitters). The other formats overlay the address on the parity, so they state none here.
+*/
 [[nodiscard]] inline bool announcesAddress(std::uint32_t downlinkFormat) noexcept { return downlinkFormat == 11U || downlinkFormat == 17U || downlinkFormat == 18U; }
 
 } // namespace detail
 
 GR_REGISTER_BLOCK(adsb::ModeSDecode)
 
-/*!
-@brief Decodes one Mode S frame, publishing its octets with the downlink message as typed metadata.
-
-The record's items are the frame's octets, unchanged: the parity the framer checked still covers what the record
-carries.
-
-The block decodes a frame only where the input record's `crc_ok` is true. The framer writes that key on long frames
-alone. A short-format nomination, which carries no self-checking parity, and a long frame whose remainder was
-nonzero both cross with their own metadata otherwise untouched, `protocol` naming which of the two they are.
-
-`protocol` names the stream's sub-kind from general to specific: `mode_s/adsb` on a decoded extended squitter,
-`mode_s` on any other admitted frame, and `mode_s/unchecked` or `mode_s/short` on the two the framer publishes only
-when asked. `mode_s_format` is re-asserted here from the octets, under the spelling the framer already writes.
-
-Compact position reporting needs two frames: an even and an odd half of one pair name a position. The block holds
-the halves per aircraft in a table of `table_size` addresses, giving up the address least recently seen when the
-table is full. It refuses and counts a pair whose halves are further apart in time than `pair_seconds`. A frame
-whose pair does not resolve still carries its own encoded halves under `adsb_cpr_*`.
+/*| role: the block between PpmFramer and AdsbPrinter. Reads the downlink message of each Mode S frame record into
+        typed metadata beside its octets.
+    contract: the output items are the input's octets unchanged, so the framer's parity still covers them. The
+        input's metadata carries through, with this block's keys written over it.
+    contract: a frame is decoded only when crc_ok is true; the framer writes crc_ok on long frames alone. Otherwise
+        it crosses undecoded with protocol mode_s/short (no crc_ok: a short-format nomination) or mode_s/unchecked
+        (crc_ok false), and nUnchecked counts it.
+    contract: protocol, general to specific: mode_s/adsb on a decoded extended squitter (formats 17, 18), mode_s
+        on any other decoded frame. mode_s_format is rewritten from the octets; mode_s_icao is written for the
+        formats announcesAddress() names. Extended squitters add adsb_type_code, adsb_message and that message's
+        adsb_* fields.
+    contract: a position needs an even and an odd half from one address. table_size bounds the per-address table of
+        halves; when full, the address seen least recently is dropped (nEvicted). A pair whose halves are more than
+        pair_seconds apart is refused (nPairsExpired). Every airborne position frame carries its own encoded half
+        under adsb_cpr_*, resolved or not; a resolved pair adds adsb_latitude and adsb_longitude (nPositions).
+    contract: a change to pair_seconds or table_size applies at once. A pair_seconds that is not finite and positive,
+        or a table_size of zero, throws and keeps the previous value.
+    contract: nFrames counts records in, nDecoded records decoded. The counters are plain members: read them on the
+        block's thread or after the graph stops.
+    verified-by: qa_ModeSDecode "an identification message names the aircraft, and the format is read from the octets not the key"
+    verified-by: qa_ModeSDecode "a frame the parity did not vouch for crosses undecoded, and the next one decodes"
+    verified-by: qa_ModeSDecode "a half with no complement names no position, and a pair older than the limit is refused"
+    verified-by: qa_ModeSDecode "the pairing table is bounded, and the address it gives up is the one least recently seen"
+    verified-by: qa_ModeSDecode "a setting outside its range is refused by name and leaves the block at the value it had"
+    verified-by: qa_ModeSDecode "every decoded field survives the record to packet boundary and the metadata encoder, at its own type"
 */
 struct ModeSDecode : Block<ModeSDecode> {
     using Description = Doc<R""(
@@ -282,15 +315,13 @@ frame's octets, so a record crosses a process whole.
 
     GR_MAKE_REFLECTABLE(ModeSDecode, in, out, pair_seconds, table_size);
 
-    // Totals, read by the owning thread and reported at stop().
-    std::uint64_t nFrames       = 0ULL; ///< records that arrived
-    std::uint64_t nDecoded      = 0ULL; ///< records whose octets the parity vouched for and whose message was read
-    std::uint64_t nPositions    = 0ULL; ///< positions a pair of compact position halves resolved
-    std::uint64_t nPairsExpired = 0ULL; ///< complete pairs refused because their halves were further apart than the limit
-    std::uint64_t nUnchecked    = 0ULL; ///< records crossing undecoded, their octets vouched for by no parity
-    std::uint64_t nEvicted      = 0ULL; ///< aircraft the pairing table gave up to make room
+    std::uint64_t nFrames       = 0ULL;
+    std::uint64_t nDecoded      = 0ULL;
+    std::uint64_t nPositions    = 0ULL;
+    std::uint64_t nPairsExpired = 0ULL;
+    std::uint64_t nUnchecked    = 0ULL;
+    std::uint64_t nEvicted      = 0ULL;
 
-    /// @brief One aircraft's position halves, and when the table last touched them.
     struct Aircraft {
         detail::CprHalf even{};
         detail::CprHalf odd{};
@@ -298,7 +329,7 @@ frame's octets, so a record crosses a process whole.
     };
 
     std::map<std::uint32_t, Aircraft> _aircraft{};
-    std::uint64_t                     _touch = 0ULL; ///< monotonic, so the least recently seen address is the smallest
+    std::uint64_t                     _touch = 0ULL; /*| invariant: monotonic; the least recently seen address holds the smallest touched */
     float                             _pair  = 10.f;
     std::size_t                       _bound = 256UZ;
 
@@ -314,7 +345,7 @@ frame's octets, so a record crosses a process whole.
     void rebuild() {
         if (!std::isfinite(pair_seconds.value) || pair_seconds.value <= 0.f) {
             const float rejected = pair_seconds.value;
-            pair_seconds.value   = _pair; // the block keeps working at the limit it already had
+            pair_seconds.value   = _pair;
             throw gr::exception(std::format("pair_seconds is {}; it must be finite and greater than zero", rejected));
         }
         if (table_size.value == 0U) {
@@ -341,7 +372,6 @@ frame's octets, so a record crosses a process whole.
         return work::Status::OK;
     }
 
-    /// @brief The record @p record becomes: its octets, its own metadata, and the message where this block reads it.
     [[nodiscard]] DataSet<std::uint8_t> decode(const DataSet<std::uint8_t>& record) {
         ++nFrames;
 
@@ -358,7 +388,7 @@ frame's octets, so a record crosses a process whole.
 
         property_map& meta = made.meta_information[0UZ];
         if (!record.meta_information.empty()) {
-            meta = record.meta_information[0UZ]; // the framer's facts carry through, this block's keys over them
+            meta = record.meta_information[0UZ];
         }
 
         const std::optional<bool> checked = detail::read<bool>(meta, "crc_ok");
@@ -385,14 +415,16 @@ frame's octets, so a record crosses a process whole.
         return made;
     }
 
-    /// @brief The ME field of a long frame, bits 33 to 88, written into @p meta as the message it names.
+    /*| frame: the ME field of a long frame, bits 33 to 88; its first five bits are the type code.
+     */
     void readExtendedSquitter(std::span<const std::uint8_t> frame, property_map& meta) {
         const std::uint32_t typeCode = detail::field(frame, 33UZ, 5UZ);
         meta.insert_or_assign(property_map::key_type("adsb_type_code"), pmt::Value(gr::Size_t{typeCode}));
         meta.insert_or_assign(property_map::key_type("adsb_message"), pmt::Value(std::string(detail::messageOf(typeCode))));
 
         if (typeCode >= 1U && typeCode <= 4U) {
-            // RTCA DO-260B 2.2.3.2, aircraft identification: an emitter category and eight six-bit characters
+            /*| frame: aircraft identification: an emitter category, bits 38 to 40, and eight six-bit characters.
+             */
             meta.insert_or_assign(property_map::key_type("adsb_emitter_category"), pmt::Value(gr::Size_t{detail::field(frame, 38UZ, 3UZ)}));
             meta.insert_or_assign(property_map::key_type("adsb_callsign"), pmt::Value(detail::identityOf(frame)));
             return;
@@ -406,7 +438,9 @@ frame's octets, so a record crosses a process whole.
         }
     }
 
-    /// @brief The airborne position message, RTCA DO-260B 2.2.3.2: an altitude and one half of a position pair.
+    /*| frame: the airborne position message: the AC altitude field, bits 41 to 52, and one half of a position pair.
+        origin: RTCA DO-260B 2.2.3.2.
+    */
     void readAirbornePosition(std::span<const std::uint8_t> frame, property_map& meta) {
         const std::uint32_t altitudeCode = detail::field(frame, 41UZ, 12UZ);
         meta.insert_or_assign(property_map::key_type("adsb_altitude_q"), pmt::Value(((altitudeCode >> 4U) & 1U) != 0U));
@@ -414,7 +448,8 @@ frame's octets, so a record crosses a process whole.
             meta.insert_or_assign(property_map::key_type("adsb_altitude_ft"), pmt::Value(*feet));
         }
 
-        // the CPR format bit at 54 says which half this is, and the two seventeen-bit encoded coordinates follow it
+        /*| frame: bit 54 is the CPR format, 0 even and 1 odd; the seventeen-bit latitude and longitude follow it.
+         */
         const std::uint32_t format = detail::field(frame, 54UZ, 1UZ);
         detail::CprHalf     half{.latitude = detail::field(frame, 55UZ, 17UZ), .longitude = detail::field(frame, 72UZ, 17UZ), .at = 0.0, .have = true};
         meta.insert_or_assign(property_map::key_type("adsb_cpr_format"), pmt::Value(gr::Size_t{format}));
@@ -424,7 +459,9 @@ frame's octets, so a record crosses a process whole.
         const std::optional<std::string> address = detail::readText(meta, "mode_s_icao");
         const std::optional<double>      when    = detail::timeOf(meta);
         if (!address.has_value() || !when.has_value()) {
-            return; // a half with no address to pair it against, or no time to age it by, resolves nothing
+            /*| contract: a half with no address to pair against, or no time to age it by, is published unpaired.
+             */
+            return;
         }
         half.at = *when;
 
@@ -444,11 +481,14 @@ frame's octets, so a record crosses a process whole.
         }
     }
 
-    /// @brief The airborne velocity message, RTCA DO-260B 2.2.3.2 type code 19, subtypes 1 to 4.
-    ///
-    /// Subtypes 1 and 2 are ground referenced and give a velocity as its east and north components; 3 and 4 are air
-    /// referenced and give an airspeed and a magnetic heading. The supersonic pair, 2 and 4, states both in units of
-    /// four knots. All four carry the same vertical rate.
+    /*| frame: the airborne velocity message, type code 19. Subtypes 1 and 2 are ground referenced: east and north
+            components, written as a ground speed and a true track. Subtypes 3 and 4 are air referenced: an
+            airspeed and a magnetic heading. The supersonic subtypes, 2 and 4, count in units of four knots. All
+            four carry the same vertical rate, in units of 64 ft/min.
+        origin: RTCA DO-260B 2.2.3.2.
+        verified-by: qa_ModeSDecode "the ground referenced velocity message gives a speed, a track and a vertical rate"
+        verified-by: qa_ModeSDecode "the air referenced velocity message gives an airspeed and a heading, and the supersonic subtype scales both"
+    */
     void readAirborneVelocity(std::span<const std::uint8_t> frame, property_map& meta) {
         const std::uint32_t subtype = detail::field(frame, 38UZ, 3UZ);
         meta.insert_or_assign(property_map::key_type("adsb_velocity_subtype"), pmt::Value(gr::Size_t{subtype}));
@@ -457,7 +497,9 @@ frame's octets, so a record crosses a process whole.
         if (subtype == 1U || subtype == 2U) {
             const std::uint32_t east  = detail::field(frame, 47UZ, 10UZ);
             const std::uint32_t north = detail::field(frame, 58UZ, 10UZ);
-            if (east != 0U && north != 0U) { // either component zero is the message's "velocity unavailable"
+            /*| frame: a component of zero is the message's "velocity unavailable".
+             */
+            if (east != 0U && north != 0U) {
                 const double eastward  = (detail::field(frame, 46UZ, 1UZ) != 0U ? -1.0 : 1.0) * (static_cast<double>(east) - 1.0) * knot;
                 const double northward = (detail::field(frame, 57UZ, 1UZ) != 0U ? -1.0 : 1.0) * (static_cast<double>(north) - 1.0) * knot;
                 meta.insert_or_assign(property_map::key_type("adsb_ground_speed_kt"), pmt::Value(std::hypot(eastward, northward)));
@@ -468,7 +510,9 @@ frame's octets, so a record crosses a process whole.
                 meta.insert_or_assign(property_map::key_type("adsb_airspeed_kt"), pmt::Value((static_cast<double>(airspeed) - 1.0) * knot));
                 meta.insert_or_assign(property_map::key_type("adsb_airspeed_type"), pmt::Value(std::string(detail::field(frame, 57UZ, 1UZ) != 0U ? "tas" : "ias")));
             }
-            if (detail::field(frame, 46UZ, 1UZ) != 0U) { // the heading status bit; clear, the heading field states nothing
+            /*| frame: bit 46 is the heading status; clear, the heading field states nothing.
+             */
+            if (detail::field(frame, 46UZ, 1UZ) != 0U) {
                 meta.insert_or_assign(property_map::key_type("adsb_heading_deg"), pmt::Value(static_cast<double>(detail::field(frame, 47UZ, 10UZ)) * 360.0 / 1024.0));
             }
         }
@@ -480,7 +524,9 @@ frame's octets, so a record crosses a process whole.
         }
     }
 
-    /// @brief The table entry for @p address, made room for at the bound by giving up the least recently seen address.
+    /*| contract: the table entry for address, marked as just seen. A new address at the bound first drops the
+            address seen least recently.
+    */
     [[nodiscard]] Aircraft& touch(std::uint32_t address) {
         const auto found = _aircraft.find(address);
         if (found == _aircraft.end() && _aircraft.size() >= _bound) {

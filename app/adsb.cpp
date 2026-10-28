@@ -1,13 +1,12 @@
-// adsb: builds the 1090 MHz receive chain, runs it, and prints one line per decoded frame.
-//
-// Live:  SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink
-// File:  BasicFileSource<int16_t> -> InterleavedToComplex -> (the same tail)
-//
-// PpmFramer, ModeSDecode and AdsbPrinter are this package's own, in the namespace `adsb` under blocks/; the rest
-// of the chain comes from GNU Radio 4 and is used as installed. ConsoleSink is defined below and is the only block
-// in the chain that assumes a terminal.
-//
-// The framer takes complex samples rather than magnitudes: its sub-sample phase search interpolates the signal.
+/*| role: the adsb program: builds the 1090 MHz receive chain, runs it, and prints one line per decoded frame.
+    frame: live: SoapySource -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> ConsoleSink.
+        file: BasicFileSource<int16_t> -> InterleavedToComplex -> the same tail. PpmFramer, ModeSDecode and
+        AdsbPrinter are this package's (blocks/); the rest is GNU Radio 4 as installed. ConsoleSink, below, is
+        the only block that assumes a terminal.
+    why: the framer takes complex samples, not magnitudes, because its sub-sample phase search interpolates them.
+    contract: exit status 2 for an unusable command line, 1 when the graph cannot be built or stops on an error,
+        0 otherwise. The closing stderr lines report the framer's counts and whether the graph ended itself.
+*/
 
 #include <algorithm>
 #include <atomic>
@@ -51,7 +50,8 @@ std::atomic<bool> gStop{false};
 
 extern "C" void onSignal(int) { gStop.store(true, std::memory_order_relaxed); }
 
-/// @brief Writes one line on stdout per text record. The record arrives already rendered.
+/*| role: writes each text record's items to stdout as one line; AdsbPrinter has already rendered it.
+ */
 struct ConsoleSink : gr::Block<ConsoleSink> {
     gr::PortIn<gr::DataSet<std::uint8_t>, gr::Async> in;
 
@@ -71,32 +71,38 @@ struct ConsoleSink : gr::Block<ConsoleSink> {
             std::fflush(stdout);
         }
         std::ignore = inSpan.consume(moved);
-        // an empty span is the normal case, and is reported as one rather than as progress
+        /*| trap: an empty span returns INSUFFICIENT_INPUT_ITEMS; OK would report progress that was not made.
+         */
         return moved == 0UZ ? gr::work::Status::INSUFFICIENT_INPUT_ITEMS : gr::work::Status::OK;
     }
 };
 
+/*| role: the parsed command line; usage() lists each option.
+    frame: frequency, rate and bandwidth in Hz, gain in dB, seconds of wall-clock run time (0: until the source
+        ends or SIGINT). device and file are exclusive. pluginDirs is where --verbose loads from; parse() fills in
+        this package's and the SDK's plugin directories when none is given.
+    trap: an unset gain or bandwidth must reach SoapySource as an empty vector, never as an absent key: the block
+        applies every setting it holds when it opens the device, and its own defaults are 10 dB of gain and
+        500 kHz of bandwidth. A device can refuse the whole activation over a combination it cannot serve; an
+        SDRplay does, with `Init() failed: sdrplay_api_Fail`.
+*/
 struct Options {
-    std::string device{};             ///< the SoapySDR device string, e.g. "driver=hackrf"
-    std::string file{};               ///< a recorded interleaved int16 capture, instead of a device
-    double      frequency = 1090.0e6; ///< Hz
-    float       rate      = 4.0e6F;   ///< Hz; must be an even integer multiple of 1 MHz
-    float       threshold = 2.0F;     ///< the framer's preamble nomination ratio
-    double      seconds   = 0.0;      ///< run bound; 0 runs until the source ends or the user interrupts
+    std::string device{};
+    std::string file{};
+    double      frequency = 1090.0e6;
+    float       rate      = 4.0e6F;
+    float       threshold = 2.0F;
+    double      seconds   = 0.0;
 
-    std::uint32_t phaseSteps  = 8U;   ///< sub-sample offsets a candidate is re-tested at; 1 turns the fine step off
-    float         coarseRatio = 0.5F; ///< the share of `threshold` the integer-position test admits a candidate at
+    std::uint32_t phaseSteps  = 8U;
+    float         coarseRatio = 0.5F;
 
-    // Unset means the device is not asked for this setting. SoapySource applies every setting it holds when it
-    // opens the device, its own defaults being 10 dB of gain and 500 kHz of bandwidth, so an option left off the
-    // command line must reach the block as an empty vector rather than as an absent key. A device can refuse the
-    // whole activation over a combination it cannot serve; an SDRplay does, with `Init() failed: sdrplay_api_Fail`.
-    std::optional<double> gain{};      ///< dB of receive gain
-    std::optional<double> bandwidth{}; ///< Hz of analog RF bandwidth
-    bool                  agc = false; ///< ask for the device's own automatic gain control
+    std::optional<double> gain{};
+    std::optional<double> bandwidth{};
+    bool                  agc = false;
 
-    bool                     verbose = false; ///< load the block libraries and print the registry keys they add
-    std::vector<std::string> pluginDirs{};    ///< directories --verbose loads from; `parse` fills in the built-in pair
+    bool                     verbose = false;
+    std::vector<std::string> pluginDirs{};
 };
 
 void usage() {
@@ -116,7 +122,8 @@ void usage() {
     std::println(stderr, "  --plugin-dir DIR directory --verbose loads from; repeatable (default: this package's and the SDK's)");
 }
 
-/// @brief @p text as a number, and nothing unless the whole string is one: "4e6x" is refused, not read as 4e6.
+/*| contract: text as a number, or nothing unless the whole string is one: "4e6x" is refused, not read as 4e6.
+ */
 [[nodiscard]] std::optional<double> number(std::string_view text) {
     try {
         std::size_t  used  = 0UZ;
@@ -127,13 +134,12 @@ void usage() {
     }
 }
 
-// Guarded with its one caller: unused, it would be an error under this package's -Werror.
 #ifdef GR4ADSB_HAVE_SOAPY
-/// @brief The SoapySDR device string @p spec split as `SoapySource` takes it: the driver name, then the rest.
-///
-/// The block takes the driver under `device` and merges the remaining comma-separated `key=value` pairs from
-/// `device_parameter`, so "driver=uhd,type=b200" becomes ("uhd", "type=b200"). A string that names no driver key is
-/// taken to be the driver itself.
+/*| contract: splits a SoapySDR device string as SoapySource takes it: the driver for `device`, the other
+        comma-separated key=value pairs for `device_parameter`. "driver=uhd,type=b200" gives ("uhd", "type=b200");
+        a string with no driver key is the driver itself.
+    trap: guarded with its one caller; unused, it is an error under this package's -Werror.
+*/
 [[nodiscard]] std::pair<std::string, std::string> splitDevice(std::string_view spec) {
     std::string driver;
     std::string rest;
@@ -157,7 +163,9 @@ void usage() {
 }
 #endif
 
-/// @brief The command line, or nothing when it is not usable; every refusal is reported on stderr.
+/*| contract: the options, or nothing when the command line is not usable; each refusal is reported on stderr.
+        The rate is checked with PpmFramer::slotsFor(), so the framer's rule is not restated here.
+*/
 [[nodiscard]] std::optional<Options> parse(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -204,7 +212,6 @@ void usage() {
             } else if (arg == "--threshold") {
                 options.threshold = static_cast<float>(*value);
             } else if (arg == "--phase-steps") {
-                // a count of offsets, so anything but a whole number is a typing error rather than a setting
                 if (*value < 1.0 || *value > 1024.0 || *value != std::floor(*value)) {
                     refuse("a whole number of offsets, at least one and at most 1024");
                     return std::nullopt;
@@ -227,7 +234,6 @@ void usage() {
         std::println(stderr, "adsb: give exactly one of --device and --file");
         return std::nullopt;
     }
-    // the rate rule is the framer's, and is asked of it rather than restated here
     if (adsb::PpmFramer<std::complex<float>>::slotsFor(options.rate) == 0UZ) {
         std::println(stderr, "adsb: --rate {} is not an even integer multiple of 1 MHz, so a half-microsecond slot is not a whole number of samples", options.rate);
         return std::nullopt;
@@ -249,22 +255,22 @@ void usage() {
         return std::nullopt;
     }
     if (options.pluginDirs.empty()) {
-        // This package's own plugin directory, which holds the ADS-B block library, and the SDK's, which holds
-        // every other family. Both come from the install this build was configured for, so an installed program
-        // needs no --plugin-dir.
+        /*| frame: GR4ADSB_PLUGIN_DIR holds this package's block library and GR4ADSB_SDK_PLUGIN_DIR every other
+                family; both come from the install the build was configured for, so an installed program needs no
+                --plugin-dir.
+        */
         options.pluginDirs.assign({std::string(GR4ADSB_PLUGIN_DIR), std::string(GR4ADSB_SDK_PLUGIN_DIR)});
     }
     return options;
 }
 
-/// @brief Load the shared block libraries in @p directories and print the registry keys they add.
-///
-/// The chain below uses `emplaceBlock<T>` and registers nothing, so every key printed came from a loaded library.
-/// Those keys are the names a graph built from a saved description would use.
-///
-/// The loader is destroyed when this function returns, but the libraries it opened stay mapped: `gr::PluginLoader`
-/// keeps a shared object that registered blocks from its static initializers mapped for the life of the process,
-/// because the registry then holds factory pointers into that object's code.
+/*| contract: loads the shared block libraries in directories and prints to stderr the registry keys they add:
+        the names a graph built from a saved description would use. The chain in main() uses emplaceBlock<T> and
+        registers nothing, so every printed key came from a loaded library.
+    invariant: the libraries stay mapped after the loader is destroyed: gr::PluginLoader keeps a shared object
+        that registered blocks mapped for the life of the process, since the registry holds factory pointers
+        into it.
+*/
 void reportPlugins(const std::vector<std::string>& directories) {
     gr::BlockRegistry&       registry = gr::globalBlockRegistry();
     std::vector<std::string> before   = registry.keys();
@@ -330,16 +336,18 @@ int main(int argc, char** argv) {
 
     bool wired = true;
     if (!options.file.empty()) {
-        // A capture is interleaved int16, so pairing the samples into complex is the only conversion needed. The
-        // framer nominates on a ratio and decides bits by comparison, and converter counts therefore serve as well
-        // as normalized floats. Nothing paces the run; it goes as fast as the file reads.
+        /*| why: a capture is interleaved int16, and pairing into complex is the only conversion needed: the framer
+                nominates on a ratio and decides bits by comparison, so raw counts serve as well as normalized
+                floats.
+            frame: nothing paces a file run; it goes as fast as the file reads.
+        */
         auto& source = flow.emplaceBlock<gr::blocks::fileio::BasicFileSource<std::int16_t>>({{"file_name", options.file}});
 
-        // The file source takes the size of each read from the bound on its output port. An unbounded port reports
-        // SIZE_MAX samples, which no read can publish, so the bound is required. It is half the edge rather than
-        // the whole of it: a read as large as the edge could only ever be published into a ring the graph had
-        // emptied first. 64 ki int16 is the edge, 33 ms of a 2 MS/s stream at two int16 a sample; a read is half of
-        // that, so one read can be consumed while the next arrives.
+        /*| trap: the file source sizes each read from its output port's max_samples. Unbounded, the port reports
+                SIZE_MAX, which no read can publish, so the bound is required.
+            why: a read is half the edge's 64 ki int16 (33 ms at 2 MS/s): a read the size of the edge could only be
+                published into an empty ring, while a half lets one read be consumed as the next arrives.
+        */
         constexpr std::size_t kReaderRing = 1UZ << 16U;
         source.out.max_samples            = kReaderRing / 2UZ;
 
@@ -350,8 +358,9 @@ int main(int argc, char** argv) {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
 
-        // The rate and the frequency are asked for unconditionally; `gain_mode` only when AGC is asked for, true
-        // being the one value the block acts on.
+        /*| contract: rate and frequency are always set; gain_mode only with --agc on, since true is the one value
+                the block acts on.
+        */
         gr::property_map settings{
             {"device", driver},
             {"device_parameter", parameters},
@@ -365,7 +374,8 @@ int main(int argc, char** argv) {
         }
         auto& source = flow.emplaceBlock<gr::blocks::sdr::SoapySource<std::complex<float>, 1UZ>>(std::move(settings));
 
-        // The startup lines name every setting asked for and every one left to the device.
+        /*| contract: the startup lines name every setting asked of the device and every one left at its default.
+         */
         std::string asked;
         std::string left;
         const auto  note = [](std::string& into, std::string_view what) { into.append(into.empty() ? "" : ", ").append(what); };
@@ -400,8 +410,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // The scheduler's result carries the error a block raised at start, such as the framer's exception on a rate that
-    // does not divide into whole slots.
+    /*| contract: runAndWait()'s error carries the exception a block raised at start, such as the framer's refusal
+            of a rate that does not divide into whole slots; it is printed and the exit status is 1.
+    */
     std::atomic<bool> done{false};
     std::atomic<bool> failed{false};
     std::thread       runner([&scheduler, &done, &failed] {

@@ -1,13 +1,11 @@
-/* The pulse-position scanner over a recorded 1090 MHz capture.
- *
- * The test has an executable of its own because its exit status is the whole binary's: an absent recording skips
- * this test alone, and the synthetic tests still run. The capture has no metadata file, so the test reads the raw
- * interleaved int16 pairs itself. The file name carries the rate and the format, and the receive rule needs only
- * magnitudes and the rate.
- *
- * The directory arrives as GR4_RECORDINGS_DIR. With the directory or the file absent the run prints the path it
- * looked for and exits 77, which CTest counts as a skip.
- */
+/*| role: the pulse-position scanner over a recorded 1090 MHz capture.
+    why: the test has an executable of its own because its exit status is the whole binary's: an absent recording skips
+        this test alone, and the synthetic tests still run. The capture has no metadata file, so the test reads the raw
+        interleaved int16 pairs itself. The file name carries the rate and the format, and the receive rule needs only
+        magnitudes and the rate.
+    why: the directory arrives as GR4_RECORDINGS_DIR. With the directory or the file absent the run prints the path it
+        looked for and exits 77, which CTest counts as a skip.
+*/
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -25,13 +23,17 @@
 
 namespace {
 
-/// ADS-B at 1090 MHz, 2 MS/s, interleaved little-endian int16 I/Q, 30.4 seconds.
+/*| frame: ADS-B at 1090 MHz, 2 MS/s, interleaved little-endian int16 I/Q, 30.4 seconds.
+ */
 constexpr std::string_view kCapture = "ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data";
 
-/// Samples converted and handed to the scanner at a time; the undecided tail stays at the front of the next batch.
+/*| role: samples converted and handed to the scanner at a time; the undecided tail stays at the front of the next
+        batch.
+*/
 constexpr std::size_t kBatch = 1UZ << 16U;
 
-/// What one pass over the capture at one threshold found.
+/*| role: what one pass over the capture at one threshold found.
+ */
 struct Sweep {
     std::uint64_t           samples     = 0ULL;
     std::uint64_t           nominations = 0ULL;
@@ -40,19 +42,18 @@ struct Sweep {
     std::uint64_t           shortFormat = 0ULL;
     std::uint64_t           format17    = 0ULL;
     std::uint64_t           format18    = 0ULL;
-    std::uint64_t           refused17   = 0ULL; ///< refused long frames whose format field still reads 17
-    std::uint64_t           refusedNear = 0ULL; ///< refused long frames whose remainder is one or two bit flips from zero
+    std::uint64_t           refused17   = 0ULL; /*| role: refused long frames whose format field still reads 17 */
+    std::uint64_t           refusedNear = 0ULL; /*| role: refused long frames whose remainder is one or two bit flips from zero */
     std::set<std::uint32_t> addresses{};
-    std::set<std::uint32_t> refusedAddresses{}; ///< the addresses the refused long frames name, which the flips may have moved
+    std::set<std::uint32_t> refusedAddresses{}; /*| role: the addresses the refused long frames name, which the flips may have moved */
 };
 
-/**
- * @brief Remainders of the frames that differ from a correct one in one or two bits, mapped to nothing but themselves.
- *
- * The reduction is linear, so the remainder of a frame carrying errors is the sum of the remainders of those single
- * bit errors alone; a refused frame whose remainder is in this set is that far from reducing to zero. It says how
- * much of the capture the bit rule nearly reads, which is the number a change to that rule would be judged by.
- */
+/*| role: remainders of the frames that differ from a correct one in one or two bits, mapped to nothing but themselves.
+    why: the reduction is linear, so the remainder of a frame carrying errors is the sum of the remainders of those
+        single bit errors alone; a refused frame whose remainder is in this set is that far from reducing to zero. It
+        says how much of the capture the bit rule nearly reads, which is the number a change to that rule would be
+        judged by.
+*/
 [[nodiscard]] const std::set<std::uint64_t>& nearMisses() {
     static const std::set<std::uint64_t> table = [] {
         gr::digital::PpmScanner scanner;

@@ -13,9 +13,10 @@ namespace adsb::detail {
 
 using gr::property_map;
 
-// A record's metadata is read at the exact declared type here. A value of another type reads as absent.
-
-/// @brief The value of @p key at the type @p T, or nothing where the key is absent or holds another type.
+/*| role: typed reads of a frame record's metadata, shared by the blocks that consume PpmFramer's records.
+    contract: every read takes the exact declared type. A key that is absent or holds another type reads as
+        nothing, never as a converted value.
+*/
 template<typename T>
 [[nodiscard]] inline std::optional<T> read(const property_map& meta, std::string_view key) {
     const auto entry = meta.find(property_map::key_type(key));
@@ -26,13 +27,16 @@ template<typename T>
     return value == nullptr ? std::nullopt : std::optional<T>{*value};
 }
 
-/// @brief The same for a string, which a metadata map holds in its own allocator's string type.
+/*| frame: a metadata map holds a string as std::pmr::string; this returns a std::string copy.
+ */
 [[nodiscard]] inline std::optional<std::string> readText(const property_map& meta, std::string_view key) {
     const std::optional<std::pmr::string> value = read<std::pmr::string>(meta, key);
     return value.has_value() ? std::optional<std::string>{std::string(*value)} : std::nullopt;
 }
 
-/// @brief Seconds into the stream the frame started, from the two keys the framer writes, or nothing without them.
+/*| contract: seconds into the stream at which the frame started, sample_start / sample_rate, the two keys
+        PpmFramer writes. Nothing when either key is missing or the rate is not positive.
+*/
 [[nodiscard]] inline std::optional<double> timeOf(const property_map& meta) {
     const std::optional<std::uint64_t> start = read<std::uint64_t>(meta, "sample_start");
     const std::optional<float>         rate  = read<float>(meta, "sample_rate");

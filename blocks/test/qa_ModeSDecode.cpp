@@ -1,13 +1,11 @@
-/* The test for the Mode S message decoder.
- *
- * Every frame here is built field by field from the standard rather than copied from a capture. A case therefore
- * states what the standard says, not what one recording happened to contain. The parity is the framer's business
- * and this block reads its verdict, so a record carries a `crc_ok` key rather than a computed parity field.
- *
- * The compact position case encodes a chosen latitude and longitude with its own implementation of RTCA
- * DO-260B A.1.7.1 and asks the block to give the position back. That pins the pairing arithmetic against the
- * standard's equations rather than against itself.
- */
+/*| role: tests the Mode S message decoder.
+    why: every frame here is built field by field from the standard rather than copied from a capture. A case therefore
+        states what the standard says, not what one recording happened to contain. The parity is the framer's business
+        and this block reads its verdict, so a record carries a `crc_ok` key rather than a computed parity field.
+    why: the compact position case encodes a chosen latitude and longitude with its own implementation of RTCA DO-260B
+        A.1.7.1 and asks the block to give the position back. That pins the pairing arithmetic against the standard's
+        equations rather than against itself.
+*/
 #include <boost/ut.hpp>
 
 #include <algorithm>
@@ -47,9 +45,10 @@ using gr::blocks::testing::span::OutputSpan;
 
 using Record = gr::DataSet<std::uint8_t>;
 
-constexpr float kRate = 2.0e6f; ///< so a sample index reads as a time
+constexpr float kRate = 2.0e6f; /*| why: gives each record a rate, so its sample_start reads as a time */
 
-/// @brief A long Mode S frame under construction, written by the standard's bit numbers: bit 1 is octet 0's top bit.
+/*| role: a long Mode S frame under construction, written by the standard's bit numbers: bit 1 is octet 0's top bit.
+ */
 struct Frame {
     std::vector<std::uint8_t> octets = std::vector<std::uint8_t>(14UZ, std::uint8_t{0});
 
@@ -64,7 +63,8 @@ struct Frame {
     }
 };
 
-/// @brief An extended squitter of type code @p typeCode from address @p address, with nothing else written yet.
+/*| role: an extended squitter of type code typeCode from address, with nothing else written yet.
+ */
 [[nodiscard]] Frame squitter(std::uint32_t address, std::uint32_t typeCode) {
     Frame frame;
     frame.put(1UZ, 5UZ, 17U);       // DF 17
@@ -74,10 +74,10 @@ struct Frame {
     return frame;
 }
 
-/// @brief The record the framer publishes for @p frame: the octets, and the account it gives of how they were taken.
-///
-/// `mode_s_format` is deliberately wrong here: the decoder re-asserts it from the octets, so a case that reads the
-/// right value back has shown the block reads the frame rather than the key.
+/*| role: the record the framer publishes for frame: the octets, and the account it gives of how they were taken.
+    trap: `mode_s_format` is deliberately wrong here: the decoder re-asserts it from the octets, so a case that reads the
+        right value back has shown the block reads the frame rather than the key.
+*/
 [[nodiscard]] Record recordOf(const Frame& frame, std::uint64_t sampleStart, std::optional<bool> crcOk = std::optional<bool>{true}, std::uint64_t sequence = 0ULL) {
     Record record;
     record.signal_values = frame.octets;
@@ -102,7 +102,8 @@ struct Frame {
     return record;
 }
 
-/// @brief What one `processBulk` of a decoder produced and counted.
+/*| role: what one `processBulk` of a decoder produced and counted.
+ */
 struct Decoded {
     std::vector<Record> records{};
     std::uint64_t       frames       = 0ULL;
@@ -135,13 +136,11 @@ struct Decoded {
     return result;
 }
 
-/// @brief The metadata of the record at @p index, or an empty map where there is none.
 [[nodiscard]] const gr::property_map& metaOf(const Decoded& decoded, std::size_t index) {
     static const gr::property_map empty{};
     return index < decoded.records.size() && !decoded.records[index].meta_information.empty() ? decoded.records[index].meta_information[0UZ] : empty;
 }
 
-/// @brief The value of @p key read at the exact type @p T; a value of another type reads as absent.
 template<typename T>
 [[nodiscard]] std::optional<T> read(const gr::property_map& meta, std::string_view key) {
     const auto entry = meta.find(gr::property_map::key_type(key));
@@ -152,7 +151,6 @@ template<typename T>
     return value == nullptr ? std::nullopt : std::optional<T>{*value};
 }
 
-/// @brief The same for a string, which a metadata map holds in its own allocator's string type.
 [[nodiscard]] std::optional<std::string> readText(const gr::property_map& meta, std::string_view key) {
     const std::optional<std::pmr::string> value = read<std::pmr::string>(meta, key);
     return value.has_value() ? std::optional<std::string>{std::string(*value)} : std::nullopt;
@@ -162,9 +160,11 @@ template<typename T>
 
 [[nodiscard]] bool has(const gr::property_map& meta, std::string_view key) { return meta.contains(gr::property_map::key_type(key)); }
 
-// ─── compact position reporting, encoded here from the standard so the decode is judged against it ────────────────
+/*| role: compact position reporting, encoded here from the standard so the decode is judged against it
+ */
 
-/// @brief RTCA DO-260B A.1.7.2.2's NL, written out again so the encoder below does not lean on the block's copy.
+/*| role: RTCA DO-260B A.1.7.2.2's NL, written out again so the encoder below does not lean on the block's copy.
+ */
 [[nodiscard]] std::int32_t zones(double degrees) {
     const double from = std::abs(degrees);
     if (from >= 87.0) {
@@ -176,7 +176,8 @@ template<typename T>
 
 [[nodiscard]] double flooredMod(double value, double modulus) { return value - modulus * std::floor(value / modulus); }
 
-/// @brief The seventeen-bit encoded halves of @p latitude and @p longitude in format @p format, RTCA DO-260B A.1.7.1.
+/*| role: the seventeen-bit encoded halves of latitude and longitude in CPR format format (0 even, 1 odd), RTCA DO-260B A.1.7.1.
+ */
 [[nodiscard]] std::pair<std::uint32_t, std::uint32_t> encodeCpr(double latitude, double longitude, std::uint32_t format) {
     constexpr double kScale     = 131072.0;
     const auto       index      = static_cast<double>(format);
@@ -189,7 +190,8 @@ template<typename T>
     return {encodedLat, encodedLon};
 }
 
-/// @brief An airborne position squitter at @p latitude and @p longitude in CPR format @p format, altitude code @p ac12.
+/*| role: an airborne position squitter at latitude and longitude in CPR format format, altitude code ac12.
+ */
 [[nodiscard]] Frame positionFrame(std::uint32_t address, double latitude, double longitude, std::uint32_t format, std::uint32_t ac12) {
     const auto [encodedLat, encodedLon] = encodeCpr(latitude, longitude, format);
     Frame frame                         = squitter(address, 11U); // type code 11, an airborne position with barometric altitude
@@ -200,7 +202,8 @@ template<typename T>
     return frame;
 }
 
-// ─── graph-side blocks, for the case that carries a decoded record across the packet boundary ─────────────────────
+/*| role: graph-side blocks, for the case that carries a decoded record across the packet boundary
+ */
 
 struct RecordSource : gr::Block<RecordSource> {
     gr::PortOut<Record> out;
@@ -235,10 +238,10 @@ struct Collector : gr::Block<Collector<TItem>> {
     }
 };
 
-/// @brief Runs a graph to completion under the simple scheduler, stopping it rather than hanging if it wedges.
-///
-/// @p collect runs while the scheduler still owns the graph, because the references `emplaceBlock` returned point
-/// into blocks the scheduler destroys with itself.
+/*| role: runs a graph to completion under the simple scheduler, stopping it rather than hanging if it wedges.
+    why: collect runs while the scheduler still owns the graph, because the references `emplaceBlock` returned point
+        into blocks the scheduler destroys with itself.
+*/
 template<typename TCollect>
 void runGraph(gr::Graph flow, TCollect&& collect) {
     gr::scheduler::Simple<> scheduler;
@@ -266,7 +269,8 @@ constexpr std::array<std::string_view, 7UZ> kSizeKeys{"mode_s_format", "adsb_typ
 constexpr std::array<std::string_view, 5UZ> kDoubleKeys{"adsb_latitude", "adsb_longitude", "adsb_ground_speed_kt", "adsb_track_deg", "adsb_heading_deg"};
 constexpr std::array<std::string_view, 2UZ> kIntegerKeys{"adsb_altitude_ft", "adsb_vertical_rate_fpm"};
 
-/// @brief Every key of @p before found in @p after at its own type, the doubles to @p relative, counting comparisons.
+/*| role: every key of before found in after at its own type, the doubles to relative, counting comparisons.
+ */
 [[nodiscard]] std::size_t sameKeys(const gr::property_map& before, const gr::property_map& after, double relative) {
     using namespace boost::ut;
     std::size_t compared = 0UZ;

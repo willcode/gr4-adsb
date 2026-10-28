@@ -36,17 +36,21 @@ using gr::digital::PpmScanner;
 
 using Record = gr::DataSet<std::uint8_t>;
 
-/// The two instantiations: magnitudes, and the samples the magnitudes came from.
+/*| role: the two instantiations: magnitudes, and the samples the magnitudes came from.
+ */
 using MagFramer = PpmFramer<float>;
 using IqFramer  = PpmFramer<std::complex<float>>;
 
-/// The five published 1090 MHz extended squitters, whose parity fields are the bare CRC.
+/*| role: the five published 1090 MHz extended squitters, whose parity fields are the bare CRC.
+ */
 constexpr std::array<std::string_view, 5> kPublished{"8D4840D6202CC371C32CE0576098", "8D40621D58C382D690C8AC2863A7", "8D40621D58C386435CC412692AD6", "8D485020994409940838175B284F", "8D40621D58C3862590C412D77427"};
 
-/// The one this suite anchors on; downlink format 17, address 0x4840D6.
+/*| role: the one this suite anchors on; downlink format 17, address 0x4840D6.
+ */
 constexpr std::string_view kAnchor = kPublished[0UZ];
 
-/// The preamble in half-microsecond slots: pulses at 0.0, 1.0, 3.5 and 4.5 microseconds.
+/*| frame: the preamble in half-microsecond slots: pulses at 0.0, 1.0, 3.5 and 4.5 microseconds.
+ */
 constexpr std::array<int, 16> kPreamble{1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0};
 
 [[nodiscard]] std::vector<std::uint8_t> octetsOf(std::string_view hex) {
@@ -59,7 +63,8 @@ constexpr std::array<int, 16> kPreamble{1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0
     return octets;
 }
 
-/// @brief The samples one frame occupies: sixteen preamble slots, then two slots a bit, each slot @p slot samples.
+/*| role: the samples one frame occupies: sixteen preamble slots, then two slots a bit, each slot slot samples.
+ */
 [[nodiscard]] std::vector<float> render(std::span<const std::uint8_t> frame, std::size_t slot = 1UZ) {
     const std::size_t  bits = frame.size() * 8UZ;
     std::vector<float> wave;
@@ -79,14 +84,16 @@ constexpr std::array<int, 16> kPreamble{1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0
 void append(std::vector<float>& into, std::span<const float> more) { into.insert(into.end(), more.begin(), more.end()); }
 void appendZeros(std::vector<float>& into, std::size_t count) { into.insert(into.end(), count, 0.F); }
 
-/// @brief One frame followed by a long frame's worth of silence, the span a position needs before it is decided.
+/*| role: one frame followed by a long frame's worth of silence, the span a position needs before it is decided.
+ */
 [[nodiscard]] std::vector<float> padded(std::span<const std::uint8_t> frame, std::size_t slot = 1UZ) {
     std::vector<float> wave = render(frame, slot);
     appendZeros(wave, (16UZ + 224UZ) * slot);
     return wave;
 }
 
-/// @brief A frame whose trailing parity field is the bare CRC over its message octets, built from @p message.
+/*| role: A frame whose trailing parity field is the bare CRC over its message octets, built from message.
+ */
 [[nodiscard]] std::vector<std::uint8_t> withParity(std::vector<std::uint8_t> message, std::size_t octets, std::uint64_t addressXor = 0ULL) {
     PpmScanner scanner;
     scanner.prepare(gr::digital::modeS(), 1UZ);
@@ -98,7 +105,8 @@ void appendZeros(std::vector<float>& into, std::size_t count) { into.insert(into
     return message;
 }
 
-/// One nomination as the kernel reported it, with the octets copied out of the scanner.
+/*| role: one nomination as the kernel reported it, with the octets copied out of the scanner.
+ */
 struct Seen {
     std::vector<std::uint8_t> octets{};
     std::size_t               bits      = 0UZ;
@@ -110,17 +118,16 @@ struct Seen {
     PpmOutcome                outcome   = PpmOutcome::Admitted;
 };
 
-/// The frames one kernel run reported, and the counters it left.
+/*| role: the frames one kernel run reported, and the counters it left.
+ */
 struct Scanned {
     std::vector<Seen> frames{};
     PpmCounters       counters{};
 };
 
-/**
- * @brief Drives the kernel over @p data presenting @p chunk fresh samples at a time.
- *
- * The undecided tail is presented again with whatever arrives next, as `consume()`'s contract states.
- */
+/*| role: drives the kernel over data presenting chunk fresh samples at a time.
+    why: the undecided tail is presented again with whatever arrives next, as `consume()`'s contract states.
+*/
 [[nodiscard]] Scanned scan(std::span<const float> data, std::size_t chunk = 0UZ, std::size_t slot = 1UZ, float threshold = 2.F) {
     PpmScanner scanner;
     scanner.prepare(gr::digital::modeS(), slot);
@@ -155,20 +162,22 @@ template<typename TBlock>
     return block;
 }
 
-/// The settings every block case shares, at 2 MS/s.
+/*| role: the settings every block case shares, at 2 MS/s.
+ */
 [[nodiscard]] gr::property_map modeSSettings(float rate = 2.0e6F) { return {{"profile", std::string("mode_s")}, {"sample_rate", rate}}; }
 
-/// The records one drive of the block produced, and the counters it reported.
+/*| role: the records one drive of the block produced, and the counters it reported.
+ */
 struct Framed {
     std::vector<Record> records{};
     std::uint64_t       samples = 0ULL, candidates = 0ULL, nominations = 0ULL, admitted = 0ULL, crcFailed = 0ULL, shortFormat = 0ULL, published = 0ULL, tagsDropped = 0ULL, rateRefused = 0ULL, tailDropped = 0ULL, overrunDropped = 0ULL;
-    std::size_t         held = 0UZ; ///< samples still in the working buffer when the run ended, before stop() drops them
+    std::size_t         held = 0UZ; /*| role: samples still in the working buffer when the run ended, which nTailDropped counts */
 };
 
-/// @brief Drives the block over @p input in windows of @p chunk samples, with @p tags planted at absolute offsets.
-///
-/// @p room is the records the sink offers per call. A false @p connected drives the block with its output port
-/// left unconnected, as a graph does when nothing is wired to `out`.
+/*| role: drives the block over input in windows of chunk samples, with tags planted at absolute offsets.
+    why: room is the records the sink offers per call. A false connected drives the block with its output port left
+        unconnected, as a graph does when nothing is wired to `out`.
+*/
 template<typename T>
 [[nodiscard]] Framed feed(PpmFramer<T>& block, std::span<const T> input, std::size_t chunk = 0UZ, std::span<const gr::Tag> tags = {}, std::size_t room = 64UZ, bool connected = true) {
     Framed              result;
@@ -274,7 +283,8 @@ struct RecordSink : gr::Block<RecordSink> {
     }
 };
 
-/// @brief Runs a graph to completion under the simple scheduler, stopping it rather than hanging if it wedges.
+/*| role: runs a graph to completion under the simple scheduler, stopping it rather than hanging if it wedges.
+ */
 template<typename TCollect>
 void runGraph(gr::Graph flow, TCollect&& collect) {
     gr::scheduler::Simple<> scheduler;
@@ -296,7 +306,8 @@ void runGraph(gr::Graph flow, TCollect&& collect) {
     collect();
 }
 
-/// @brief Runs @p samples through a `PpmFramer` under the scheduler and hands back what the sink saw.
+/*| role: runs samples through a `PpmFramer` under the scheduler and hands back what the sink saw.
+ */
 template<typename T = float>
 [[nodiscard]] std::vector<Record> scheduled(std::vector<T> samples, gr::property_map settings) {
     gr::Graph flow;
@@ -321,11 +332,13 @@ struct Rng {
         state ^= state << 17U;
         return state;
     }
-    /// A number in (0, 1].
+    /*| role: A number in (0, 1].
+     */
     [[nodiscard]] double uniform() noexcept { return static_cast<double>((next() >> 11U) + 1ULL) * 0x1p-53; }
 };
 
-/// @brief Rayleigh magnitudes of unit mean power, the envelope a complex Gaussian channel presents to the framer.
+/*| role: Rayleigh magnitudes of unit mean power, the envelope a complex Gaussian channel presents to the framer.
+ */
 [[nodiscard]] std::vector<float> rayleigh(std::size_t count, std::uint64_t seed) {
     Rng                rng{seed};
     std::vector<float> noise(count);
@@ -335,16 +348,20 @@ struct Rng {
     return noise;
 }
 
-/// @brief Fine samples a slot in the rendered waveform; an offset of an eighth of a sample is an exact grid step.
+/*| role: fine samples a slot in the rendered waveform; an offset of an eighth of a sample is an exact grid step.
+ */
 constexpr std::size_t kGrid = 32UZ;
 
-/// @brief Slots of silence the renderer puts before the burst; the scan then has positions on either side of it.
+/*| role: slots of silence the renderer puts before the burst; the scan then has positions on either side of it.
+ */
 constexpr std::size_t kLead = 8UZ;
 
-/// @brief The carrier every rendered sample sits on; nothing downstream can pass by reading a real part.
+/*| role: the carrier every rendered sample sits on; nothing downstream can pass by reading a real part.
+ */
 constexpr float kCarrier = 0.7F;
 
-/// @brief One magnitude stream as the samples it could have been read from, unchanged in magnitude.
+/*| role: one magnitude stream as the samples it could have been read from, unchanged in magnitude.
+ */
 [[nodiscard]] std::vector<std::complex<float>> asIq(std::span<const float> magnitudes) {
     std::vector<std::complex<float>> wave;
     wave.reserve(magnitudes.size());
@@ -355,15 +372,12 @@ constexpr float kCarrier = 0.7F;
     return wave;
 }
 
-/**
- * @brief One frame as complex baseband, one sample a slot, sitting @p tau samples away from the sample it is nearest.
- *
- * Rectangular pulses are laid on a grid of `kGrid` samples a slot and averaged over one slot, the front end this
- * framer is written for: each sample is half a microsecond of signal integrated. Sampling that grid at one sample
- * a slot delays the burst by @p tau, leaving the frame's first slot at index `lead + tau`.
- *
- * @p tau in [-0.5, 0.5), a multiple of `1 / kGrid`, so the grid is sampled and never resampled.
- */
+/*| role: one frame as complex baseband, one sample a slot, sitting tau samples away from the sample it is nearest.
+    why: rectangular pulses are laid on a grid of `kGrid` samples a slot and averaged over one slot, the front end this
+        framer is written for: each sample is half a microsecond of signal integrated. Sampling that grid at one sample
+        a slot delays the burst by tau, leaving the frame's first slot at index `lead + tau`.
+    why: tau in [-0.5, 0.5), a multiple of `1 / kGrid`, so the grid is sampled and never resampled.
+*/
 [[nodiscard]] std::vector<std::complex<float>> renderIq(std::span<const std::uint8_t> frame, float tau, std::size_t lead = kLead, std::size_t trail = 260UZ) {
     const std::size_t  bits = frame.size() * 8UZ;
     std::vector<float> slots;
@@ -405,7 +419,8 @@ constexpr float kCarrier = 0.7F;
     return wave;
 }
 
-/// @brief The eight sub-sample offsets a `phase_steps` of eight searches, the grid the renderer is swept on.
+/*| role: the eight sub-sample offsets a `phase_steps` of eight searches, the grid the renderer is swept on.
+ */
 [[nodiscard]] constexpr float offsetOf(std::size_t step) noexcept { return -0.5F + static_cast<float>(step) / 8.F; }
 
 } // namespace qa_ppm_framer
