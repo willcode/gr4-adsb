@@ -72,6 +72,7 @@ struct Frame {
     meta.insert_or_assign(gr::property_map::key_type("sample_start"), gr::pmt::Value(static_cast<std::uint64_t>(seconds * static_cast<double>(kRate))));
     meta.insert_or_assign(gr::property_map::key_type("sample_rate"), gr::pmt::Value(kRate));
     meta.insert_or_assign(gr::property_map::key_type("sequence"), gr::pmt::Value(std::uint64_t{7}));
+    meta.insert_or_assign(gr::property_map::key_type("mode_s_format"), gr::pmt::Value(static_cast<gr::Size_t>(frame.octets.at(0UZ) >> 3U)));
     if (crcOk.has_value()) {
         meta.insert_or_assign(gr::property_map::key_type("crc_ok"), gr::pmt::Value(*crcOk));
     }
@@ -180,7 +181,7 @@ const boost::ut::suite<"adsb-printer"> printerTests = [] {
         expect(eq(printed.lines[1UZ], std::string("   30.781  DF17  AB0969  airpos  alt 39000 ft  lat 42.40448  lon -71.34696")));
     };
 
-    "a frame the decoder would not read prints its protocol and its octets"_test = [] {
+    "a frame the decoder would not read prints its protocol and its octets, though the framer named its format"_test = [] {
         Frame frame = squitter(0xA0B803U, 19U);
         frame.put(38UZ, 3UZ, 1U);
 

@@ -111,8 +111,8 @@ the end and at each rate change. Neither is printed.
   a stall.
 - A settings change on `PpmFramer` after `start()` clears its held samples and counters but keeps
   `sample_start` and tag positions on the stream's own index.
-- A record that reaches `AdsbPrinter` with `mode_s_format` but no decode (only with `emit_short` or
-  `emit_unchecked`) prints its DF and protocol, not its octets.
+- `AdsbPrinter` prints a frame the decoder left unread (`emit_short` or `emit_unchecked`) as its protocol
+  and its octets in hex.
 - `BlockLabels.hpp` content sits under `GR4ADSB_BLOCK_LABELS`; an older core carries an incompatible
   header under the same name.
 

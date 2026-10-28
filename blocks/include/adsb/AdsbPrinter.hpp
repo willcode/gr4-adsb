@@ -50,8 +50,8 @@ GR_REGISTER_BLOCK(adsb::AdsbPrinter)
         `   29.781  DF17  AB0969  airpos  alt 39000 ft  lat 42.40448  lon -71.34696  [AAL160]`
         Columns: seconds from the frame's own sample_start and sample_rate, the downlink format, the address,
         what the message said, and the identification in brackets when an earlier frame from that address
-        gave one. A record without mode_s_format prints its protocol and its octets. A framer record the decoder
-        left unread prints its DF, `------` and its protocol.
+        gave one. A record the decoder left unread (protocol mode_s/short or mode_s/unchecked), or one without
+        mode_s_format, prints its protocol and its octets in hex.
     contract: the output record's items are the line's bytes, with no trailing newline (to_stdout adds one), and
         no timing events. Its metadata is the input's, every key, plus protocol = text/adsb, so a consumer can
         still filter on the address or altitude. source_id stays unwritten: the record-metadata vocabulary gives
@@ -173,10 +173,10 @@ output, for a run that attaches no consumer.
     }
 
     [[nodiscard]] std::string lineOf(const DataSet<std::uint8_t>& record, const property_map& meta) {
-        const double                    seconds = detail::timeOf(meta).value_or(0.0);
-        const std::optional<gr::Size_t> format  = detail::read<gr::Size_t>(meta, "mode_s_format");
-        if (!format.has_value()) {
-            const std::string protocol = textOf(meta, "protocol");
+        const double                    seconds  = detail::timeOf(meta).value_or(0.0);
+        const std::optional<gr::Size_t> format   = detail::read<gr::Size_t>(meta, "mode_s_format");
+        const std::string               protocol = textOf(meta, "protocol");
+        if (!format.has_value() || protocol == "mode_s/short" || protocol == "mode_s/unchecked") {
             return std::format("{:9.3f}  {}  {}", seconds, protocol.empty() ? std::string("mode_s") : protocol, hexOf(std::span<const std::uint8_t>(record.signal_values)));
         }
 
@@ -194,9 +194,8 @@ output, for a run that attaches no consumer.
     [[nodiscard]] static std::string detailOf(const property_map& meta) {
         const std::string message = textOf(meta, "adsb_message");
         if (message.empty()) {
-            /*| frame: a record with no adsb_message prints its protocol: a decoded frame of another format, or one
-                    the decoder left unread.
-            */
+            /*| frame: a decoded frame of a format that carries no ADS-B message prints its protocol.
+             */
             return textOf(meta, "protocol");
         }
         if (message == "identification") {
