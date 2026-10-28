@@ -166,8 +166,8 @@ RSP1A.
 `--gain 40` is a working figure. With a fixed tuner gain the 8-bit samples can still sit low in
 their range, so that gap slots and bit decisions rest on one or two quantization steps; `--agc on`
 turns on the RTL2832's digital gain as well as the tuner's and lifts the signal into the
-converter's range. `--agc off` is the default and asks for nothing; the block only ever turns AGC
-on, so nothing here forces it off on a device that enables it by itself. An SDRplay runs its AGC by
+converter's range. `--agc off` is the default and sends no AGC setting, so a device that enables
+AGC by itself keeps it. An SDRplay runs its AGC by
 default, which suits ADS-B.
 
 **A HackRF needs `--gain 100` or thereabouts.** The driver opens the radio with 16 dB on the LNA

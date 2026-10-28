@@ -93,9 +93,9 @@ the end and at each rate change. Neither is printed.
   `app/adsb.cpp`; the blocks do not change.
 - **Build and test.** CMake against a GNU Radio 4 install on `CMAKE_PREFIX_PATH`; `BUILD_TESTING` (CTest,
   default on) and Boost.UT (an installed `ut` package or `-DGR_BOOST_UT_INCLUDE_DIR`) build the suites,
-  which are skipped at configure without Boost.UT; `ctest` runs every suite. `GR4_RECORDINGS_DIR` points the two `recording`
-  suites at the capture `ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data`; without it they exit
-  77 and count as skipped. `qa_AdsbLabels` builds only where the core supports block labels.
+  which are skipped at configure without Boost.UT; `ctest` runs every suite. `GR4_RECORDINGS_DIR` points
+  the two `recording` suites at the capture
+  `ADSB_20260812_182544_1090000000_2000000_cs16.sigmf-data`; without it they exit 77 and count as skipped. `qa_AdsbLabels` builds only where the core supports block labels.
 
 ## Invariants and traps
 
@@ -109,8 +109,9 @@ the end and at each rate change. Neither is printed.
   design.
 - `processBulk` must not return OK having consumed and published nothing; the scheduler reads that as
   a stall.
-- A settings change on `PpmFramer` after `start()` restarts its index at zero: `sample_start` and tag
-  indices then count from the change. The program and the graph files change no setting while running.
+- A settings change on `PpmFramer` after `start()` restarts its index at zero: `sample_start` then counts
+  from the change, and input tags, still held at their stream index, attach to no frame and count in
+  `nTagsDropped`. The program and the graph files change no setting while running.
 - A record that reaches `AdsbPrinter` with `mode_s_format` but no decode (only with `emit_short` or
   `emit_unchecked`) prints its DF and protocol, not its octets.
 - `BlockLabels.hpp` content sits under `GR4ADSB_BLOCK_LABELS`; an older core carries an incompatible

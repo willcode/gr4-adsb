@@ -55,9 +55,9 @@ GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
         Description states the phase search, which only the complex instantiation runs.
     contract: a record's items are the frame's octets. Its metadata: trigger_name (frame_label), protocol (the
         profile; ModeSDecode writes its own sub-kind over it), sample_start (absolute index of the first data
-        sample), sequence, sample_rate (the rate in force), mode_s_format, crc_remainder, crc_ok (long frames only), preamble_strong,
-        preamble_weak and sample_phase. The frame's timing is sample_start + sample_phase on either
-        instantiation.
+        sample), sequence, sample_rate (the rate in force), mode_s_format, crc_remainder, crc_ok (long frames
+        only), preamble_strong, preamble_weak and sample_phase. The frame's timing is sample_start + sample_phase
+        on either instantiation.
     contract: an input tag that falls inside a published frame's span, preamble included, becomes a timing event
         on its record, at an index relative to sample_start (negative on the preamble). Every other tag is
         counted in nTagsDropped. The block propagates no tags itself.
@@ -71,8 +71,9 @@ GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
         sequence and every counter. A bad threshold, phase_steps, coarse_ratio or profile throws. After start(), a
         sample_rate that is not a whole slot, or an empty profile, is kept without effect: the previous rate and
         framing stay.
-    trap: a settings change after start() restarts the working buffer's index at zero, so sample_start and the
-        tag indices then count from the first sample after the change.
+    trap: a settings change after start() restarts the working buffer's index at zero: sample_start then counts
+        from the first sample after the change, and input tags, still held at their stream index, attach to no
+        frame and are counted in nTagsDropped.
     contract: the counters are complete after every processBulk() call. nSamples counts samples consumed;
         nCandidates positions that passed the coarse test; nNominations positions that passed threshold;
         nAdmitted, nCrcFailed and nShortFormat the scanner's outcomes; nPublished records produced, also while

@@ -273,8 +273,8 @@ GR_REGISTER_BLOCK(adsb::ModeSDecode)
         (crc_ok false), and nUnchecked counts it.
     contract: protocol, general to specific: mode_s/adsb on a decoded extended squitter (formats 17, 18), mode_s
         on any other decoded frame. mode_s_format is rewritten from the octets; mode_s_icao is written on formats
-        17 and 18; DF11 also announces its address but is a short frame and never reaches the decode. Extended squitters add adsb_type_code, adsb_message and that message's
-        adsb_* fields.
+        17 and 18; DF11 also announces its address but is a short frame and never reaches the decode. Extended
+        squitters add adsb_type_code, adsb_message and that message's adsb_* fields.
     contract: a position needs an even and an odd half from one address. table_size bounds the per-address table of
         halves; when full, the address seen least recently is dropped (nEvicted). A pair whose halves are more than
         pair_seconds apart is refused (nPairsExpired). Every airborne position frame carries its own encoded half
