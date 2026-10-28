@@ -109,9 +109,8 @@ the end and at each rate change. Neither is printed.
   design.
 - `processBulk` must not return OK having consumed and published nothing; the scheduler reads that as
   a stall.
-- A settings change on `PpmFramer` after `start()` restarts its index at zero: `sample_start` then counts
-  from the change, and input tags, still held at their stream index, attach to no frame and count in
-  `nTagsDropped`. The program and the graph files change no setting while running.
+- A settings change on `PpmFramer` after `start()` clears its held samples and counters but keeps
+  `sample_start` and tag positions on the stream's own index.
 - A record that reaches `AdsbPrinter` with `mode_s_format` but no decode (only with `emit_short` or
   `emit_unchecked`) prints its DF and protocol, not its octets.
 - `BlockLabels.hpp` content sits under `GR4ADSB_BLOCK_LABELS`; an older core carries an incompatible

@@ -817,6 +817,39 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         expect(events[1UZ].second.contains(gr::property_map::key_type("payload")));
     };
 
+    "a settings change mid-stream keeps sample_start and tags on the stream's index"_test = [] {
+        constexpr std::size_t           kLead  = 1000UZ;
+        const std::vector<std::uint8_t> anchor = octetsOf(kAnchor);
+        std::vector<float>              before(kLead, 0.F);
+        std::vector<float>              after;
+        appendZeros(after, 20UZ);
+        append(after, render(std::span<const std::uint8_t>(anchor)));
+        appendZeros(after, 300UZ);
+        const std::vector<gr::Tag> tags{gr::Tag{kLead + 20UZ + 40UZ, {{"payload", std::string("kept")}}}};
+
+        MagFramer           block = make<MagFramer>(modeSSettings());
+        std::vector<Record> scratch(64UZ);
+        const auto          drive = [&](std::span<const float> samples, std::size_t streamIndex, std::span<const gr::Tag> spanTags) {
+            InputSpan<float>   inSpan(samples, streamIndex, spanTags);
+            OutputSpan<Record> outSpan(std::span<Record>(scratch), 0UZ, nullptr, true);
+            std::ignore = block.processBulk(inSpan, outSpan);
+            return outSpan.count;
+        };
+        expect(eq(drive(std::span<const float>(before), 0UZ, {}), 0UZ));
+
+        std::ignore = block.settings().set({{"threshold", 2.5F}});
+        std::ignore = block.settings().activateContext();
+        std::ignore = block.settings().applyStagedParameters();
+        expect(eq(block.threshold.value, 2.5F)) << "the change reached the block, and with it the rebuild";
+
+        expect(fatal(eq(drive(std::span<const float>(after), kLead, std::span<const gr::Tag>(tags)), 1UZ)));
+        expect(eq(metaU64(scratch[0UZ], "sample_start"), std::uint64_t{kLead + 36UZ})) << "the first data sample's index in the whole stream";
+        expect(eq(block.nTagsDropped, 0ULL));
+        const auto& events = scratch[0UZ].timing_events.at(0UZ);
+        expect(fatal(eq(events.size(), 1UZ))) << "the tag inside the frame attaches";
+        expect(eq(events[0UZ].first, std::ptrdiff_t{24}));
+    };
+
     "the counters are complete after every call, and stop() only reports them"_test = [] {
         // A block's stop() runs on the thread that asked for the stop, while the block's own worker may still be
         // inside processBulk. stop() may therefore read the counters and nothing else, and the counters have to be

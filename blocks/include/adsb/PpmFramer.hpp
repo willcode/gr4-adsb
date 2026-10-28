@@ -71,9 +71,9 @@ GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
         sequence and every counter. A bad threshold, phase_steps, coarse_ratio or profile throws. After start(), a
         sample_rate that is not a whole slot, or an empty profile, is kept without effect: the previous rate and
         framing stay.
-    trap: a settings change after start() restarts the working buffer's index at zero: sample_start then counts
-        from the first sample after the change, and input tags, still held at their stream index, attach to no
-        frame and are counted in nTagsDropped.
+    contract: after a rebuild the next call takes the working buffer's index from the stream, so sample_start
+        and tag positions stay absolute across a settings change.
+    verified-by: qa_PpmFramer "a settings change mid-stream keeps sample_start and tags on the stream's index"
     contract: the counters are complete after every processBulk() call. nSamples counts samples consumed;
         nCandidates positions that passed the coarse test; nNominations positions that passed threshold;
         nAdmitted, nCrcFailed and nShortFormat the scanner's outcomes; nPublished records produced, also while
@@ -182,13 +182,15 @@ that bound are dropped and counted, oldest first.
     gr::digital::PpmScanner _scanner{};
     /*| frame: _retired banks the kernel's counts from earlier rates, since prepare() zeroes the kernel's own.
             _work is the undecided input; _mags its magnitudes index for index, empty at float. _workStart is the
-            absolute index of _work[0]. _slot is samples per half-microsecond slot at _rate, the rate in force.
+            absolute index of _work[0]; _anchor says the next call sets it from the stream, as after a rebuild.
+            _slot is samples per half-microsecond slot at _rate, the rate in force.
             _tailBanked and _tagsBanked are drops already final; the counters add what is still held.
     */
     gr::digital::PpmCounters _retired{};
     std::vector<T>           _work{};
     std::vector<float>       _mags{};
     std::size_t              _workStart = 0UZ;
+    bool                     _anchor    = true;
     std::size_t              _slot      = 0UZ;
     float                    _rate      = 0.F;
     std::vector<Pending>     _pending{};
@@ -234,6 +236,7 @@ that bound are dropped and counted, oldest first.
         _mags.clear();
         _pending.clear();
         _workStart = 0UZ;
+        _anchor    = true;
         _sequence  = 0ULL;
         nSamples = nCandidates = nNominations = nAdmitted = nCrcFailed = nShortFormat = nPublished = 0ULL;
         nTagsDropped = nRateRefused = nTailDropped = nOverrunDropped = 0ULL;
@@ -281,6 +284,10 @@ that bound are dropped and counted, oldest first.
             return work::Status::INSUFFICIENT_OUTPUT_ITEMS;
         }
 
+        if (_anchor) {
+            _workStart = inSpan.streamIndex;
+            _anchor    = false;
+        }
         _arriving.clear();
         for (const auto& [relIndex, tagMap] : inSpan.tags()) {
             /*| trap: a block that holds samples across calls is shown an earlier call's tag again at a negative
