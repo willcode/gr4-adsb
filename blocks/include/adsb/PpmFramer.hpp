@@ -51,25 +51,28 @@ GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
         gr::digital::PpmScanner over the sample stream and publishes one DataSet<uint8_t> record per frame. The
         kernel decides what a frame is; this block sizes it from the rate, holds the undecided samples across
         calls, builds the records and carries onto each the tags that fell inside its frame.
-    frame: T is float for a magnitude stream (|x|, not |x|^2) or std::complex<float> for the samples. Only the
-        complex instantiation searches sub-sample phase, by interpolating the samples, and reads phase_steps and
-        coarse_ratio.
+    frame: T is float for a magnitude stream (|x|, not |x|^2) or std::complex<float> for the samples; the
+        Description states the phase search, which only the complex instantiation runs.
     contract: a record's items are the frame's octets. Its metadata: trigger_name (frame_label), protocol (the
         profile; ModeSDecode writes its own sub-kind over it), sample_start (absolute index of the first data
-        sample), sequence, gr:sample_rate, mode_s_format, crc_remainder, crc_ok (long frames only), preamble_strong,
+        sample), sequence, sample_rate (the rate in force), mode_s_format, crc_remainder, crc_ok (long frames only), preamble_strong,
         preamble_weak and sample_phase. The frame's timing is sample_start + sample_phase on either
         instantiation.
     contract: an input tag that falls inside a published frame's span, preamble included, becomes a timing event
         on its record, at an index relative to sample_start (negative on the preamble). Every other tag is
         counted in nTagsDropped. The block propagates no tags itself.
     contract: the rate must be an even integer multiple of 1 MHz, so a half-microsecond slot is a whole number of
-        samples. A gr:sample_rate tag of such a value replaces the rate from its sample on; any other value is
-        counted in nRateRefused and the previous rate stands. start() throws on an empty profile or a bad
-        sample_rate setting.
+        samples. A gr:sample_rate tag of such a value replaces the rate from its sample on; any other float value
+        is counted in nRateRefused and the previous rate stands, and a tag whose value is not a float is ignored.
+        start() throws on an empty profile or a bad sample_rate setting.
     contract: by default only admitted long frames (remainder zero) are published. emit_unchecked adds long frames
         with a nonzero remainder; emit_short adds short frames, which carry no self-checking parity.
     contract: any settings change, and reset(), rebuilds the scanner and clears the held samples, held tags,
-        sequence and every counter. A bad threshold, phase_steps, coarse_ratio or profile throws.
+        sequence and every counter. A bad threshold, phase_steps, coarse_ratio or profile throws. After start(), a
+        sample_rate that is not a whole slot, or an empty profile, is kept without effect: the previous rate and
+        framing stay.
+    trap: a settings change after start() restarts the working buffer's index at zero, so sample_start and the
+        tag indices then count from the first sample after the change.
     contract: the counters are complete after every processBulk() call. nSamples counts samples consumed;
         nCandidates positions that passed the coarse test; nNominations positions that passed threshold;
         nAdmitted, nCrcFailed and nShortFormat the scanner's outcomes; nPublished records produced, also while
@@ -77,9 +80,6 @@ GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
         refused rate tags; nTailDropped samples whose window never completed, those still held included;
         nOverrunDropped samples dropped at the working buffer's bound. They are plain members: read them on the
         block's thread or after the graph stops.
-    why: the parity is checked here, not downstream, because the remainder decides containment: an admitted
-        frame consumes its whole window and no position inside it is nominated, while any other nomination
-        advances the search by one sample.
     verified-by: qa_PpmFramer "the anchor decodes identically at every chunking"
     verified-by: qa_PpmFramer "an admitted frame contains its own window and a refused one yields a sample"
     verified-by: qa_PpmFramer "the rate sets the slot width, and a rate that is not a whole slot is refused"
@@ -170,8 +170,9 @@ that bound are dropped and counted, oldest first.
             may share one index.
     */
     static constexpr std::size_t kPendingCap = 4096UZ;
-    /*| invariant: the working buffer holds one window plus kWorkReserve samples; past that the oldest samples are
-            dropped (nOverrunDropped). The reserve is taken at start(), so appending a span does not allocate.
+    /*| invariant: after each call the working buffer holds at most one window plus kWorkReserve samples; past that
+            the oldest are dropped (nOverrunDropped). start() reserves that much; a span arriving on a full buffer,
+            or a rate raised by a tag, grows it once.
         verified-by: qa_PpmFramer "the working buffer is bounded when the sink stops taking records"
     */
     static constexpr std::size_t kWorkReserve = 1UZ << 16U;
@@ -319,9 +320,8 @@ that bound are dropped and counted, oldest first.
         const auto scan = [&](std::span<const T> arriving) -> std::expected<void, gr::Error> {
             _work.insert(_work.end(), arriving.begin(), arriving.end());
             if constexpr (kAligns) {
-                /*| invariant: the kernel decides on _mags and interpolates on _work; both grow together, here
-                        only, inside the reserve taken at start().
-                */
+                /*| invariant: the kernel decides on _mags and interpolates on _work; both grow together, here only.
+                 */
                 const std::size_t known = _mags.size();
                 _mags.resize(_work.size());
                 for (std::size_t j = 0UZ; j < arriving.size(); ++j) {
@@ -479,7 +479,7 @@ that bound are dropped and counted, oldest first.
         meta.insert_or_assign(property_map::key_type("preamble_weak"), pmt::Value(frame.weak));
         /*| frame: sample_phase in [-0.5, 0.5) samples. An admitted frame takes its window from the first position
                 that passed, which can be the sample before the one its preamble sits nearest; this offset corrects
-                it. Zero when no phase was searched (float).
+                it. Zero when no phase was searched (float, or phase_steps 1).
         */
         meta.insert_or_assign(property_map::key_type("sample_phase"), pmt::Value(frame.phase));
 

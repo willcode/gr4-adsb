@@ -81,10 +81,9 @@ struct ConsoleSink : gr::Block<ConsoleSink> {
     frame: frequency, rate and bandwidth in Hz, gain in dB, seconds of wall-clock run time (0: until the source
         ends or SIGINT). device and file are exclusive. pluginDirs is where --verbose loads from; parse() fills in
         this package's and the SDK's plugin directories when none is given.
-    trap: an unset gain or bandwidth must reach SoapySource as an empty vector, never as an absent key: the block
-        applies every setting it holds when it opens the device, and its own defaults are 10 dB of gain and
-        500 kHz of bandwidth. A device can refuse the whole activation over a combination it cannot serve; an
-        SDRplay does, with `Init() failed: sdrplay_api_Fail`.
+    contract: gain and bandwidth reach SoapySource only as given; an empty vector leaves the device's own value.
+    trap: a device can refuse the whole activation over a combination it cannot serve; an SDRplay does, with
+        `Init() failed: sdrplay_api_Fail`.
 */
 struct Options {
     std::string device{};
@@ -345,7 +344,7 @@ int main(int argc, char** argv) {
 
         /*| trap: the file source sizes each read from its output port's max_samples. Unbounded, the port reports
                 SIZE_MAX, which no read can publish, so the bound is required.
-            why: a read is half the edge's 64 ki int16 (33 ms at 2 MS/s): a read the size of the edge could only be
+            why: a read is half the edge's 64 ki int16 (8.2 ms at 2 MS/s): a read the size of the edge could only be
                 published into an empty ring, while a half lets one read be consumed as the next arrives.
         */
         constexpr std::size_t kReaderRing = 1UZ << 16U;
@@ -358,8 +357,8 @@ int main(int argc, char** argv) {
 #ifdef GR4ADSB_HAVE_SOAPY
         const auto [driver, parameters] = splitDevice(options.device);
 
-        /*| contract: rate and frequency are always set; gain_mode only with --agc on, since true is the one value
-                the block acts on.
+        /*| contract: rate and frequency are always set; gain_mode only with --agc on, since false would switch off
+                an AGC the device enables by itself.
         */
         gr::property_map settings{
             {"device", driver},
@@ -410,8 +409,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    /*| contract: runAndWait()'s error carries the exception a block raised at start, such as the framer's refusal
-            of a rate that does not divide into whole slots; it is printed and the exit status is 1.
+    /*| contract: runAndWait()'s error carries the exception a block raised at start or in processBulk; it is
+            printed and the exit status is 1.
     */
     std::atomic<bool> done{false};
     std::atomic<bool> failed{false};

@@ -177,8 +177,8 @@ struct CprHalf {
 };
 
 /*| contract: the globally unambiguous latitude and longitude in degrees that an even and an odd half name,
-        taken from the newer half. Nothing when the halves fall in different longitude zones, as a pair
-        straddling a zone boundary does; the next pair resolves.
+        taken from the newer half. Nothing when the two decoded latitudes give different NL, as a pair straddling
+        a latitude where the zone count changes does; the next pair resolves.
     origin: RTCA DO-260B A.1.7.4.
     verified-by: qa_ModeSDecode "an even and an odd half resolve the position they were encoded from, to the format's own resolution"
 */
@@ -272,13 +272,15 @@ GR_REGISTER_BLOCK(adsb::ModeSDecode)
         it crosses undecoded with protocol mode_s/short (no crc_ok: a short-format nomination) or mode_s/unchecked
         (crc_ok false), and nUnchecked counts it.
     contract: protocol, general to specific: mode_s/adsb on a decoded extended squitter (formats 17, 18), mode_s
-        on any other decoded frame. mode_s_format is rewritten from the octets; mode_s_icao is written for the
-        formats announcesAddress() names. Extended squitters add adsb_type_code, adsb_message and that message's
+        on any other decoded frame. mode_s_format is rewritten from the octets; mode_s_icao is written on formats
+        17 and 18; DF11 also announces its address but is a short frame and never reaches the decode. Extended squitters add adsb_type_code, adsb_message and that message's
         adsb_* fields.
     contract: a position needs an even and an odd half from one address. table_size bounds the per-address table of
         halves; when full, the address seen least recently is dropped (nEvicted). A pair whose halves are more than
         pair_seconds apart is refused (nPairsExpired). Every airborne position frame carries its own encoded half
-        under adsb_cpr_*, resolved or not; a resolved pair adds adsb_latitude and adsb_longitude (nPositions).
+        under adsb_cpr_*, resolved or not; a resolved pair adds adsb_latitude and adsb_longitude (nPositions). A half
+        pairs only on a record carrying sample_start and sample_rate (detail::timeOf); without them it is
+        published unpaired and uncounted.
     contract: a change to pair_seconds or table_size applies at once. A pair_seconds that is not finite and positive,
         or a table_size of zero, throws and keeps the previous value.
     contract: nFrames counts records in, nDecoded records decoded. The counters are plain members: read them on the

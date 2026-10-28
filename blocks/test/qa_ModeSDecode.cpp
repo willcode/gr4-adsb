@@ -263,7 +263,9 @@ void runGraph(gr::Graph flow, TCollect&& collect) {
     collect();
 }
 
-// The keys this block writes, by the type each of them holds, so that one case can carry all of them at once.
+/*| role: the keys the decoder writes, by type, so one case carries them all across the packet boundary. A bool key
+        (adsb_altitude_q) has no list.
+*/
 constexpr std::array<std::string_view, 6UZ> kStringKeys{"protocol", "mode_s_icao", "adsb_message", "adsb_callsign", "adsb_airspeed_type", "adsb_vertical_rate_source"};
 constexpr std::array<std::string_view, 7UZ> kSizeKeys{"mode_s_format", "adsb_type_code", "adsb_emitter_category", "adsb_cpr_format", "adsb_cpr_latitude", "adsb_cpr_longitude", "adsb_velocity_subtype"};
 constexpr std::array<std::string_view, 5UZ> kDoubleKeys{"adsb_latitude", "adsb_longitude", "adsb_ground_speed_kt", "adsb_track_deg", "adsb_heading_deg"};

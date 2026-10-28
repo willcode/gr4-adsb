@@ -5,8 +5,8 @@
     why: the capture has no metadata file. Its name carries the rate and the format, the two facts the chain needs. The
         directory arrives as GR4_RECORDINGS_DIR. With the directory or the file absent the run prints the path it looked
         for and exits 77, which CTest counts as a skip.
-    measured: 60.7 million samples through seven blocks, a few seconds in a release build. The CTest timeout of 300 s
-        and the graph's own 240 s watchdog are margin for a slower machine.
+    measured: 60.7 million samples through eight blocks in 1.1 s (ctest, Release build, i7-12700H).
+    why: the CTest timeout of 300 s and the graph's own 240 s watchdog are margin for a slower machine.
 */
 #include <algorithm>
 #include <array>

@@ -50,18 +50,18 @@ GR_REGISTER_BLOCK(adsb::AdsbPrinter)
         `   29.781  DF17  AB0969  airpos  alt 39000 ft  lat 42.40448  lon -71.34696  [AAL160]`
         Columns: seconds from the frame's own sample_start and sample_rate, the downlink format, the address,
         what the message said, and the identification in brackets when an earlier frame from that address
-        gave one. A record the decoder left unread prints its protocol and its octets instead.
-    contract: the output record's items are the line's bytes, with no trailing newline (to_stdout adds one).
-        Its metadata is the input's, every key, plus protocol = text/adsb, so a consumer can still filter on
-        the address or altitude. source_id is left unwritten: the vocabulary gives that key to the receiver.
+        gave one. A record without mode_s_format prints its protocol and its octets. A framer record the decoder
+        left unread prints its DF, `------` and its protocol.
+    contract: the output record's items are the line's bytes, with no trailing newline (to_stdout adds one), and
+        no timing events. Its metadata is the input's, every key, plus protocol = text/adsb, so a consumer can
+        still filter on the address or altitude. source_id stays unwritten: the record-metadata vocabulary gives
+        it to the receiver, as the operator's name for it.
     contract: table_size bounds the address-to-identification table, the block's only state; when full, the
         address seen least recently is dropped. A change applies at once and trims the table. Zero throws
         and keeps the previous size.
     contract: nLines counts lines published, nNamed lines that carried a bracketed identification, nEvicted
         addresses dropped from the table. They are plain members: read them on the block's thread or after the
         graph stops.
-    why: the block reads ModeSDecode's typed metadata keys, never the octets, so the line and a structured
-        view of the same record cannot disagree.
     verified-by: qa_AdsbPrinter "each message renders the line its fields describe, and the time comes off the frame"
     verified-by: qa_AdsbPrinter "the name table is bounded, and the address it gives up loses its name"
     verified-by: qa_AdsbPrinter "the text record carries the line, the input's keys and a protocol of its own"
@@ -194,8 +194,9 @@ output, for a run that attaches no consumer.
     [[nodiscard]] static std::string detailOf(const property_map& meta) {
         const std::string message = textOf(meta, "adsb_message");
         if (message.empty()) {
-            /*| role: an admitted frame of a format that carries no ADS-B message prints its protocol.
-             */
+            /*| frame: a record with no adsb_message prints its protocol: a decoded frame of another format, or one
+                    the decoder left unread.
+            */
             return textOf(meta, "protocol");
         }
         if (message == "identification") {
