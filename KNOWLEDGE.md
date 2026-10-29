@@ -18,6 +18,7 @@ as a block library) and one console program. GNU Radio 4 has no ADS-B family; th
 | `blocks/include/adsb/AdsbPrinter.hpp`  | decoded record to one console line, as a text record                          |
 | `blocks/include/adsb/RecordFields.hpp` | typed metadata reads shared by the two consumers                              |
 | `blocks/include/adsb/BlockLabels.hpp`  | family label, compiled only where the core supports labels                    |
+| `blocks/include/adsb/PpmConsume.hpp`   | `detail::consumed`: a scanner `consume()` result as `std::expected`           |
 | `app/adsb.cpp`                         | the `adsb` program: builds the chain in C++, live (SoapySDR) or from a file   |
 | `graphs/*.yaml`                        | the same chain as graph files: capture, hackrf, rtl out to ZeroMQ; printer in |
 | `tools/adsb_listen.py`                 | reads the ZeroMQ packets without GNU Radio (pyzmq)                            |
@@ -34,7 +35,7 @@ source -> PpmFramer<complex<float>> -> ModeSDecode -> AdsbPrinter -> console or 
 
 `PpmFramer<float>` takes a magnitude stream (`|x|`, from `gr::blocks::math::Abs`) and skips the
 sub-sample phase search. The complex form is the default everywhere: the search interpolates samples.
-The scanner itself is core's `gr::digital::PpmScanner`; `modeS()` is its framing.
+The scanner itself is the algorithm library's `gr::digital::PpmScanner`; `modeS()` is its framing.
 
 ## Record keys
 
@@ -47,7 +48,7 @@ over them. Reads are exact-type: a key at another type reads as absent (`detail:
 | `trigger_name`                                               | string         | framer          | `frame_label` setting, default `mode_s`                                                                     |
 | `protocol`                                                   | string         | all three       | framer: profile; decoder: `mode_s/adsb`, `mode_s`, `mode_s/short`, `mode_s/unchecked`; printer: `text/adsb` |
 | `sample_start`                                               | uint64         | framer          | absolute index of the first data sample                                                                     |
-| `sample_rate`                                                | float          | framer          | rate in force for the frame; `sample_start / sample_rate` is the time; the input tag is `gr:sample_rate`    |
+| `sample_rate`                                                | float          | framer          | rate in force for the frame; `sample_start / sample_rate` is the time; tag key: `detail::rateTagKey()`      |
 | `sample_phase`                                               | float          | framer          | sub-sample offset in [-0.5, 0.5); timing is `sample_start + sample_phase`                                   |
 | `sequence`                                                   | uint64         | framer          | per-block record count, reset by a settings change                                                          |
 | `crc_remainder`                                              | Size_t         | framer          | 0 on an admitted frame                                                                                      |
@@ -115,6 +116,14 @@ the end and at each rate change. Neither is printed.
   and its octets in hex.
 - `BlockLabels.hpp` content sits under `GR4ADSB_BLOCK_LABELS`; an older core carries an incompatible
   header under the same name.
+- The library's `PpmScanner::consume()` exists in two forms: one returns `std::expected` with a
+  `gr::Error` for a refused framing, the other returns the bare count and throws
+  `std::invalid_argument`. Every call goes through `detail::consumed` (`PpmConsume.hpp`), which gives
+  both as the `std::expected`.
+- A rate tag's key depends on the core: `gr::tag::put(map, gr::tag::SAMPLE_RATE, v)` writes
+  `gr:sample_rate` on one core and `sample_rate` on the other, and the framer reads the key that call
+  writes (`detail::rateTagKey()`). A record's own keys (`trigger_name`, `sample_rate`) are plain strings
+  on both, since the accessor for the bare name is `name()` on one core and `shortKey()` on the other.
 
 ## Domain
 

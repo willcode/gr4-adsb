@@ -5,7 +5,8 @@
 #
 # PpmFramer runs on gr::digital::PpmScanner, the pulse-position kernel of the framework's algorithm layer, and
 # gnuradio-algorithm is on the link line for it. RecordFields.hpp registers nothing and is read by the two message
-# blocks.
+# blocks; PpmConsume.hpp registers nothing either and gives the scanner's consume() one return type across the library's
+# two forms.
 
 gr_add_block_library(
   AdsbDemoBlocks

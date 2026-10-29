@@ -21,6 +21,8 @@
 
 #include <gnuradio-4.0/algorithm/digital/Ppm.hpp>
 
+#include <adsb/PpmConsume.hpp>
+
 namespace {
 
 /*| frame: ADS-B at 1090 MHz, 2 MS/s, interleaved little-endian int16 I/Q, 30.4 seconds.
@@ -130,7 +132,7 @@ struct Sweep {
         result.samples += pairs;
 
         scanner.seek(workStart);
-        const std::size_t done = scanner.consume(std::span<const float>(work), onFrame).value();
+        const std::size_t done = adsb::detail::consumed([&] { return scanner.consume(std::span<const float>(work), onFrame); }).value();
         work.erase(work.begin(), work.begin() + static_cast<std::ptrdiff_t>(done));
         workStart += done;
     }

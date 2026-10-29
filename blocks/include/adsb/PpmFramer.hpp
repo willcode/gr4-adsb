@@ -26,6 +26,7 @@
 #include <gnuradio-4.0/algorithm/digital/Ppm.hpp>
 
 #include <adsb/BlockLabels.hpp>
+#include <adsb/PpmConsume.hpp>
 
 namespace adsb {
 
@@ -45,6 +46,23 @@ using gr::Visible;
 namespace pmt  = gr::pmt;
 namespace work = gr::work;
 
+namespace detail {
+
+/*| contract: the key a sample-rate tag carries on the core at hand, as gr::tag::put writes it for
+        gr::tag::SAMPLE_RATE: gr:sample_rate on a core that files its reserved keys under gr:, the bare sample_rate
+        on one that does not.
+*/
+[[nodiscard]] inline const std::string& rateTagKey() {
+    static const std::string key = [] {
+        property_map probe;
+        gr::tag::put(probe, gr::tag::SAMPLE_RATE, 0.F);
+        return std::string(std::string_view(probe.begin()->first));
+    }();
+    return key;
+}
+
+} // namespace detail
+
 GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
 
 /*| role: the first block of the receive chain after the source (or its magnitude stage). Runs
@@ -62,8 +80,9 @@ GR_REGISTER_BLOCK(adsb::PpmFramer, [T], [ float, std::complex<float> ])
         on its record, at an index relative to sample_start (negative on the preamble). Every other tag is
         counted in nTagsDropped. The block propagates no tags itself.
     contract: the rate must be an even integer multiple of 1 MHz, so a half-microsecond slot is a whole number of
-        samples. A gr:sample_rate tag of such a value replaces the rate from its sample on; any other float value
-        is counted in nRateRefused and the previous rate stands, and a tag whose value is not a float is ignored.
+        samples. A sample-rate tag (detail::rateTagKey()) of such a value replaces the rate from its sample on; any
+        other float value is counted in nRateRefused and the previous rate stands, and a tag whose value is not a
+        float is ignored.
         start() throws on an empty profile or a bad sample_rate setting.
     contract: by default only admitted long frames (remainder zero) are published. emit_unchecked adds long frames
         with a nonzero remainder; emit_short adds short frames, which carry no self-checking parity.
@@ -109,7 +128,7 @@ both the nomination and the bits, and travels on the record as `sample_phase`: a
 `sample_start + sample_phase`. Only this instantiation reads `phase_steps` and `coarse_ratio`.
 
 `sample_rate` must be an even integer multiple of 1 MHz, so that a half-microsecond slot spans a whole number of
-samples. A `gr:sample_rate` tag overrides the setting for the samples after it; a tagged rate of any other value is a
+samples. A sample-rate tag overrides the setting for the samples after it; a tagged rate of any other value is a
 counted refusal that leaves the previous rate standing.
 
 The parity is checked here because the remainder decides containment: an admitted frame consumes its whole window
@@ -348,12 +367,13 @@ that bound are dropped and counted, oldest first.
                 const std::size_t headroom  = room - onOut;
                 const std::size_t slice     = headroom >= available ? available : std::min(available, window - 1UZ + headroom);
                 _scanner.seek(_workStart + base);
-                std::expected<std::size_t, gr::Error> done{0UZ};
-                if constexpr (kAligns) {
-                    done = _scanner.consume(std::span<const float>(_mags).subspan(base, slice), std::span<const T>(_work).subspan(base, slice), sink);
-                } else {
-                    done = _scanner.consume(std::span<const float>(_work).subspan(base, slice), sink);
-                }
+                const std::expected<std::size_t, gr::Error> done = detail::consumed([&] {
+                    if constexpr (kAligns) {
+                        return _scanner.consume(std::span<const float>(_mags).subspan(base, slice), std::span<const T>(_work).subspan(base, slice), sink);
+                    } else {
+                        return _scanner.consume(std::span<const float>(_work).subspan(base, slice), sink);
+                    }
+                });
                 if (!done) {
                     return std::unexpected(std::move(done.error()));
                 }
@@ -392,7 +412,7 @@ that bound are dropped and counted, oldest first.
         const std::span<const T> items(inSpan.begin(), inSpan.size());
         std::size_t              cut = 0UZ;
         for (const Arriving& tag : _arriving) {
-            const auto entry = tag.map->find(property_map::key_type(gr::tag::SAMPLE_RATE.key()));
+            const auto entry = tag.map->find(property_map::key_type(detail::rateTagKey()));
             if (entry == tag.map->end()) {
                 continue;
             }
@@ -470,11 +490,11 @@ that bound are dropped and counted, oldest first.
         record.timestamp = 0;
 
         property_map& meta = record.meta_information[0UZ];
-        meta.insert_or_assign(property_map::key_type(gr::tag::TRIGGER_NAME.name()), pmt::Value(std::string_view(frame_label.value)));
+        meta.insert_or_assign(property_map::key_type("trigger_name"), pmt::Value(std::string_view(frame_label.value)));
         meta.insert_or_assign(property_map::key_type("protocol"), pmt::Value(std::string_view(profile.value)));
         meta.insert_or_assign(property_map::key_type("sample_start"), pmt::Value(static_cast<std::uint64_t>(start)));
         meta.insert_or_assign(property_map::key_type("sequence"), pmt::Value(_sequence));
-        meta.insert_or_assign(property_map::key_type(gr::tag::SAMPLE_RATE.name()), pmt::Value(_rate));
+        meta.insert_or_assign(property_map::key_type("sample_rate"), pmt::Value(_rate));
         meta.insert_or_assign(property_map::key_type("mode_s_format"), pmt::Value(static_cast<gr::Size_t>(frame.format)));
         meta.insert_or_assign(property_map::key_type("crc_remainder"), pmt::Value(static_cast<gr::Size_t>(frame.remainder)));
         if (frame.outcome != gr::digital::PpmOutcome::ShortFormat) {

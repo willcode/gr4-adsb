@@ -139,7 +139,7 @@ struct Scanned {
     std::size_t       fed    = std::min(data.size(), stride);
     while (true) {
         scanner.seek(base);
-        const std::size_t done = scanner.consume(data.subspan(base, fed - base), [&result](const PpmFrame& frame) { result.frames.push_back({std::vector<std::uint8_t>(frame.octets.begin(), frame.octets.end()), frame.bits, frame.format, frame.remainder, frame.strong, frame.weak, frame.position, frame.outcome}); }).value();
+        const std::size_t done = adsb::detail::consumed([&] { return scanner.consume(data.subspan(base, fed - base), [&result](const PpmFrame& frame) { result.frames.push_back({std::vector<std::uint8_t>(frame.octets.begin(), frame.octets.end()), frame.bits, frame.format, frame.remainder, frame.strong, frame.weak, frame.position, frame.outcome}); }); }).value();
         base += done;
         if (fed == data.size()) {
             if (done == 0UZ) {
@@ -729,7 +729,11 @@ const boost::ut::suite<"ppm framer"> ppmFramerTests = [] {
         append(stream, second);
         appendZeros(stream, 600UZ);
 
-        const auto                 rateTag = [](std::size_t at, float rate) { return gr::Tag{at, gr::property_map{{gr::property_map::key_type(gr::tag::SAMPLE_RATE.key()), gr::pmt::Value(rate)}}}; };
+        const auto rateTag = [](std::size_t at, float rate) {
+            gr::property_map map;
+            gr::tag::put(map, gr::tag::SAMPLE_RATE, rate);
+            return gr::Tag{at, std::move(map)};
+        };
         const std::vector<gr::Tag> tags{rateTag(100UZ, 3.0e6F), rateTag(change, 4.0e6F)};
         MagFramer                  block = make<MagFramer>(modeSSettings());
         const Framed               seen  = feed(block, std::span<const float>(stream), 64UZ, std::span<const gr::Tag>(tags));

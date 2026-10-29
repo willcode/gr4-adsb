@@ -12,6 +12,8 @@
 
 #include <gnuradio-4.0/algorithm/digital/Ppm.hpp>
 
+#include <adsb/PpmConsume.hpp>
+
 namespace {
 
 using gr::digital::PpmFrame;
@@ -105,7 +107,7 @@ int main() {
 
     for (std::size_t which = 0UZ; which < scanners.size(); ++which) {
         arms.push_back({labels[which], [&, which] {
-                            const std::size_t done = scanners[which].consume(std::span<const float>(streams[which]), [](const PpmFrame&) {}).value();
+                            const std::size_t done = adsb::detail::consumed([&] { return scanners[which].consume(std::span<const float>(streams[which]), [](const PpmFrame&) {}); }).value();
                             return static_cast<double>(done);
                         }});
     }
